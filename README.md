@@ -6,7 +6,7 @@ Custom reinforcement-learning tasks for **Isaac Lab**.
 
 ## 🚀 Quick Installation
 
-1. **Install Isaac Sim _and_ Isaac Lab** by following the official guide: <https://github.com/IsaacLab/IsaacLab#installation>
+1. **Install Isaac Sim _and_ Isaac Lab** by following the official guide: <https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/pip_installation.html>
 2. Clone this repository **inside** your Isaac Lab task directory:
 
 ```bash
