@@ -62,7 +62,10 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     rssi_max_dbm: float = 26.0
     
     ui_window_class_type = QuadcopterEnvWindow
-    
+    USD_PATH = os.path.abspath(                       # ⇒ /mutlak/yol/…
+    os.path.join(os.path.dirname(__file__),       # bu .py dosyasının klasörü
+                 "assets", "scenes", "simple_room", "simple_room.usd")
+    )
     # simulation
     sim: SimulationCfg = SimulationCfg(
         dt=1 / 100,
@@ -76,14 +79,15 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
         ),
     )
     terrain = TerrainImporterCfg(
-        prim_path="/World/ground",
-        terrain_type="plane",
+        prim_path="/World/envs/env_0",
+        terrain_type="usd",
+        usd_path=USD_PATH,
         collision_group=-1,
         debug_vis=False,
     )
 
     # scene
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=64, env_spacing=8, replicate_physics=True)
 
     # robot
     robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -135,7 +139,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
         self._terrain = self.cfg.terrain.class_type(self.cfg.terrain)
         # clone and replicate
-        self.scene.clone_environments(copy_from_source=False)
+        self.scene.clone_environments(copy_from_source=True)
         # add lights
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
