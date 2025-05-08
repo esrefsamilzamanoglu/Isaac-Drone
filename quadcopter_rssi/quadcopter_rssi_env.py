@@ -78,7 +78,7 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
         terrain_type="usd",
-        usd_path="assets/scenes/simple_room/simple_room.usd",
+        usd_path="./assets/scenes/simple_room/simple_room.usd",
         collision_group=-1,
         physics_material=sim_utils.RigidBodyMaterialCfg(
             friction_combine_mode="multiply",
