@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import gymnasium as gym
 import torch
-
+import os
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
@@ -62,7 +62,10 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     rssi_max_dbm: float = 26.0
     
     ui_window_class_type = QuadcopterEnvWindow
-
+    USD_PATH = os.path.abspath(                       # ⇒ /mutlak/yol/…
+    os.path.join(os.path.dirname(__file__),       # bu .py dosyasının klasörü
+                 "assets", "scenes", "simple_room", "simple_room.usd")
+    )
     # simulation
     sim: SimulationCfg = SimulationCfg(
         dt=1 / 100,
@@ -78,7 +81,7 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
         terrain_type="usd",
-        usd_path="./assets/scenes/simple_room/simple_room.usd",
+        usd_path=USD_PATH,
         collision_group=-1,
         physics_material=sim_utils.RigidBodyMaterialCfg(
             friction_combine_mode="multiply",
