@@ -1,0 +1,416 @@
+<scene version="2.1.0">
+
+<!-- Defaults, these can be set via the command line: -Darg=value -->
+
+
+<!-- Camera and Rendering Parameters -->
+
+	<integrator type="path" id="elm__0" name="elm__0">
+		<integer name="max_depth" value="12"/>
+	</integrator>
+
+<!-- Materials -->
+
+	<bsdf type="twosided" id="mat-itu_concrete" name="mat-itu_concrete">
+		<bsdf type="principled" name="bsdf">
+			<rgb value="0.800000 0.800000 0.800000" name="base_color"/>
+			<rgb value="1.000000 1.000000 1.000000" name="spec_tint"/>
+			<float name="spec_trans" value="0.000000"/>
+			<float name="metallic" value="0.000000"/>
+			<float name="anisotropic" value="0.000000"/>
+			<float name="roughness" value="0.250000"/>
+			<float name="sheen" value="0.000000"/>
+			<rgb value="1.000000 1.000000 1.000000" name="sheen_tint"/>
+			<float name="clearcoat" value="0.000000"/>
+			<float name="clearcoat_gloss" value="0.000900"/>
+			<float name="specular" value="0.500000"/>
+		</bsdf>
+	</bsdf>
+	<bsdf type="twosided" id="mat-itu_metal" name="mat-itu_metal">
+		<bsdf type="principled" name="bsdf">
+			<texture type="bitmap" name="base_color">
+				<string name="filename" value="textures/mtl-base_color_3.jpg"/>
+			</texture>
+			<rgb value="0.000000 0.000000 0.000000" name="spec_tint"/>
+			<float name="spec_trans" value="0.000000"/>
+			<float name="metallic" value="0.800000"/>
+			<float name="anisotropic" value="0.000000"/>
+			<float name="roughness" value="0.258849"/>
+			<float name="sheen" value="0.000000"/>
+			<rgb value="1.000000 1.000000 1.000000" name="sheen_tint"/>
+			<float name="clearcoat" value="0.500000"/>
+			<texture type="bitmap" name="clearcoat_gloss">
+				<string name="filename" value="textures/mtl-clearcoat_roughness_2.jpg"/>
+				<boolean name="raw" value="true"/>
+			</texture>
+			<float name="specular" value="0.500000"/>
+		</bsdf>
+	</bsdf>
+	<bsdf type="twosided" id="mat-itu_floorboard" name="mat-itu_floorboard">
+		<bsdf type="principled" name="bsdf">
+			<texture type="bitmap" name="base_color">
+				<string name="filename" value="textures/mtl-base_color.jpg"/>
+			</texture>
+			<rgb value="0.000000 0.000000 0.000000" name="spec_tint"/>
+			<float name="spec_trans" value="0.000000"/>
+			<float name="metallic" value="0.000000"/>
+			<float name="anisotropic" value="0.000000"/>
+			<float name="roughness" value="1.000000"/>
+			<float name="sheen" value="0.000000"/>
+			<rgb value="1.000000 1.000000 1.000000" name="sheen_tint"/>
+			<float name="clearcoat" value="0.500000"/>
+			<texture type="bitmap" name="clearcoat_gloss">
+				<string name="filename" value="textures/mtl-clearcoat_roughness.jpg"/>
+				<boolean name="raw" value="true"/>
+			</texture>
+			<float name="specular" value="0.500000"/>
+		</bsdf>
+	</bsdf>
+	<bsdf type="twosided" id="mat-itu_ceiling_board" name="mat-itu_ceiling_board">
+		<bsdf type="principled" name="bsdf">
+			<texture type="bitmap" name="base_color">
+				<string name="filename" value="textures/mtl-base_color_5.jpg"/>
+			</texture>
+			<rgb value="0.000000 0.000000 0.000000" name="spec_tint"/>
+			<float name="spec_trans" value="0.000000"/>
+			<float name="metallic" value="0.000000"/>
+			<float name="anisotropic" value="0.000000"/>
+			<float name="roughness" value="1.000000"/>
+			<float name="sheen" value="0.000000"/>
+			<rgb value="1.000000 1.000000 1.000000" name="sheen_tint"/>
+			<float name="clearcoat" value="0.500000"/>
+			<texture type="bitmap" name="clearcoat_gloss">
+				<string name="filename" value="textures/mtl-clearcoat_roughness_4.jpg"/>
+				<boolean name="raw" value="true"/>
+			</texture>
+			<float name="specular" value="0.500000"/>
+		</bsdf>
+	</bsdf>
+	<bsdf type="twosided" id="mat-itu_plasterboard" name="mat-itu_plasterboard">
+		<bsdf type="principled" name="bsdf">
+			<texture type="bitmap" name="base_color">
+				<string name="filename" value="textures/mtl-base_color_2.jpg"/>
+			</texture>
+			<rgb value="0.000000 0.000000 0.000000" name="spec_tint"/>
+			<float name="spec_trans" value="0.000000"/>
+			<float name="metallic" value="0.000000"/>
+			<float name="anisotropic" value="0.000000"/>
+			<float name="roughness" value="1.000000"/>
+			<float name="sheen" value="0.000000"/>
+			<rgb value="1.000000 1.000000 1.000000" name="sheen_tint"/>
+			<float name="clearcoat" value="0.500000"/>
+			<float name="clearcoat_gloss" value="0.250000"/>
+			<float name="specular" value="0.500000"/>
+		</bsdf>
+	</bsdf>
+	<bsdf type="twosided" id="mat-itu_plywood" name="mat-itu_plywood">
+		<bsdf type="principled" name="bsdf">
+			<texture type="bitmap" name="base_color">
+				<string name="filename" value="textures/mtl-base_color_1.jpg"/>
+			</texture>
+			<rgb value="0.000000 0.000000 0.000000" name="spec_tint"/>
+			<float name="spec_trans" value="0.000000"/>
+			<float name="metallic" value="0.000000"/>
+			<float name="anisotropic" value="0.000000"/>
+			<float name="roughness" value="1.000000"/>
+			<float name="sheen" value="0.000000"/>
+			<rgb value="1.000000 1.000000 1.000000" name="sheen_tint"/>
+			<float name="clearcoat" value="0.500000"/>
+			<texture type="bitmap" name="clearcoat_gloss">
+				<string name="filename" value="textures/mtl-clearcoat_roughness_1.jpg"/>
+				<boolean name="raw" value="true"/>
+			</texture>
+			<float name="specular" value="0.500000"/>
+		</bsdf>
+	</bsdf>
+	<bsdf type="twosided" id="mat-itu_glass" name="mat-itu_glass">
+		<bsdf type="principled" name="bsdf">
+			<rgb value="0.000000 0.000000 0.000000" name="base_color"/>
+			<rgb value="0.000000 0.000000 0.000000" name="spec_tint"/>
+			<float name="spec_trans" value="0.000000"/>
+			<float name="metallic" value="0.000000"/>
+			<float name="anisotropic" value="0.000000"/>
+			<float name="roughness" value="0.000000"/>
+			<float name="sheen" value="0.000000"/>
+			<rgb value="1.000000 1.000000 1.000000" name="sheen_tint"/>
+			<float name="clearcoat" value="0.000000"/>
+			<float name="clearcoat_gloss" value="1.000000"/>
+			<float name="specular" value="0.500000"/>
+		</bsdf>
+	</bsdf>
+	<bsdf type="twosided" id="mat-itu_wood" name="mat-itu_wood">
+		<bsdf type="principled" name="bsdf">
+			<texture type="bitmap" name="base_color">
+				<string name="filename" value="textures/mtl-base_color_4.jpg"/>
+			</texture>
+			<rgb value="0.000000 0.000000 0.000000" name="spec_tint"/>
+			<float name="spec_trans" value="0.000000"/>
+			<float name="metallic" value="0.000000"/>
+			<float name="anisotropic" value="0.000000"/>
+			<float name="roughness" value="1.000000"/>
+			<float name="sheen" value="0.000000"/>
+			<rgb value="1.000000 1.000000 1.000000" name="sheen_tint"/>
+			<float name="clearcoat" value="0.500000"/>
+			<texture type="bitmap" name="clearcoat_gloss">
+				<string name="filename" value="textures/mtl-clearcoat_roughness_3.jpg"/>
+				<boolean name="raw" value="true"/>
+			</texture>
+			<float name="specular" value="0.500000"/>
+		</bsdf>
+	</bsdf>
+
+<!-- Emitters -->
+
+	<!--shape type="rectangle" id="emit-RectLight" name="emit-RectLight">
+		<boolean name="flip_normals" value="true"/>
+		<transform name="to_world">
+			<matrix value="1.250000 0.000000 0.000000 0.000000 0.000000 0.175000 0.000000 -0.880803 0.000000 0.000000 0.005000 3.285440 0.000000 0.000000 0.000000 1.000000"/>
+		</transform>
+		<emitter type="area" name="emitter">
+			<rgb value="25.000002 25.000002 25.000002" name="radiance"/>
+		</emitter>
+		<bsdf type="null" name="bsdf"/>
+	</shape-->
+
+<!-- Shapes -->
+
+	<shape type="ply" id="mesh-SM_Template_Map_Floor" name="mesh-SM_Template_Map_Floor">
+		<string name="filename" value="meshes/SM_Template_Map_Floor.ply"/>
+		<ref id="mat-itu_concrete" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-SM_Template_Map_Floor_001" name="mesh-SM_Template_Map_Floor_001">
+		<string name="filename" value="meshes/SM_Template_Map_Floor_001.ply"/>
+		<ref id="mat-itu_concrete" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-SM_Template_Map_Floor_002" name="mesh-SM_Template_Map_Floor_002">
+		<string name="filename" value="meshes/SM_Template_Map_Floor_002.ply"/>
+		<ref id="mat-itu_concrete" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-SM_Template_Map_Floor_003" name="mesh-SM_Template_Map_Floor_003">
+		<string name="filename" value="meshes/SM_Template_Map_Floor_003.ply"/>
+		<ref id="mat-itu_concrete" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-SM_Template_Map_Floor_004" name="mesh-SM_Template_Map_Floor_004">
+		<string name="filename" value="meshes/SM_Template_Map_Floor_004.ply"/>
+		<ref id="mat-itu_concrete" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-table_low" name="mesh-table_low">
+		<string name="filename" value="meshes/table_low.ply"/>
+		<ref id="mat-itu_metal" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_bottom" name="mesh-Towel_Room01_floor_bottom">
+		<string name="filename" value="meshes/Towel_Room01_floor_bottom.ply"/>
+		<ref id="mat-itu_floorboard" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_back" name="mesh-Towel_Room01_floor_rim_back">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_back.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_back001" name="mesh-Towel_Room01_floor_rim_back001">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_back001.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_corner" name="mesh-Towel_Room01_floor_rim_corner">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_corner.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_corner001" name="mesh-Towel_Room01_floor_rim_corner001">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_corner001.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_corner002" name="mesh-Towel_Room01_floor_rim_corner002">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_corner002.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_corner003" name="mesh-Towel_Room01_floor_rim_corner003">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_corner003.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_corner004" name="mesh-Towel_Room01_floor_rim_corner004">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_corner004.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_corner005" name="mesh-Towel_Room01_floor_rim_corner005">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_corner005.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_corner006" name="mesh-Towel_Room01_floor_rim_corner006">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_corner006.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_corner007" name="mesh-Towel_Room01_floor_rim_corner007">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_corner007.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_front_center" name="mesh-Towel_Room01_floor_rim_front_center">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_front_center.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_front_center001" name="mesh-Towel_Room01_floor_rim_front_center001">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_front_center001.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_front_center_side" name="mesh-Towel_Room01_floor_rim_front_center_side">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_front_center_side.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_front_center_side001" name="mesh-Towel_Room01_floor_rim_front_center_side001">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_front_center_side001.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_front_center_side002" name="mesh-Towel_Room01_floor_rim_front_center_side002">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_front_center_side002.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_front_center_side003" name="mesh-Towel_Room01_floor_rim_front_center_side003">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_front_center_side003.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_side" name="mesh-Towel_Room01_floor_rim_side">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_side.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_side001" name="mesh-Towel_Room01_floor_rim_side001">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_side001.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_side002" name="mesh-Towel_Room01_floor_rim_side002">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_side002.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_rim_side003" name="mesh-Towel_Room01_floor_rim_side003">
+		<string name="filename" value="meshes/Towel_Room01_floor_rim_side003.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_floor_top" name="mesh-Towel_Room01_floor_top">
+		<string name="filename" value="meshes/Towel_Room01_floor_top.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_florr_edge" name="mesh-Towel_Room01_florr_edge">
+		<string name="filename" value="meshes/Towel_Room01_florr_edge.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_florr_edge001" name="mesh-Towel_Room01_florr_edge001">
+		<string name="filename" value="meshes/Towel_Room01_florr_edge001.ply"/>
+		<ref id="mat-itu_ceiling_board" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_lamp" name="mesh-Towel_Room01_lamp">
+		<string name="filename" value="meshes/Towel_Room01_lamp.ply"/>
+		<ref id="mat-itu_plasterboard" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_lamp_frame" name="mesh-Towel_Room01_lamp_frame">
+		<string name="filename" value="meshes/Towel_Room01_lamp_frame.ply"/>
+		<ref id="mat-itu_metal" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wall_back" name="mesh-Towel_Room01_wall_back">
+		<string name="filename" value="meshes/Towel_Room01_wall_back.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wall_back001" name="mesh-Towel_Room01_wall_back001">
+		<string name="filename" value="meshes/Towel_Room01_wall_back001.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wall_corner" name="mesh-Towel_Room01_wall_corner">
+		<string name="filename" value="meshes/Towel_Room01_wall_corner.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wall_corner001" name="mesh-Towel_Room01_wall_corner001">
+		<string name="filename" value="meshes/Towel_Room01_wall_corner001.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wall_corner002" name="mesh-Towel_Room01_wall_corner002">
+		<string name="filename" value="meshes/Towel_Room01_wall_corner002.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wall_corner003" name="mesh-Towel_Room01_wall_corner003">
+		<string name="filename" value="meshes/Towel_Room01_wall_corner003.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wall_side" name="mesh-Towel_Room01_wall_side">
+		<string name="filename" value="meshes/Towel_Room01_wall_side.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wall_side001" name="mesh-Towel_Room01_wall_side001">
+		<string name="filename" value="meshes/Towel_Room01_wall_side001.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_window" name="mesh-Towel_Room01_window">
+		<string name="filename" value="meshes/Towel_Room01_window.ply"/>
+		<ref id="mat-itu_glass" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_window1" name="mesh-Towel_Room01_window1">
+		<string name="filename" value="meshes/Towel_Room01_window1.ply"/>
+		<ref id="mat-itu_glass" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_window_frame_bottom001" name="mesh-Towel_Room01_window_frame_bottom001">
+		<string name="filename" value="meshes/Towel_Room01_window_frame_bottom001.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_window_frame_bottom002" name="mesh-Towel_Room01_window_frame_bottom002">
+		<string name="filename" value="meshes/Towel_Room01_window_frame_bottom002.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_window_frame_corner002" name="mesh-Towel_Room01_window_frame_corner002">
+		<string name="filename" value="meshes/Towel_Room01_window_frame_corner002.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_window_frame_corner004" name="mesh-Towel_Room01_window_frame_corner004">
+		<string name="filename" value="meshes/Towel_Room01_window_frame_corner004.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_window_frame_corner005" name="mesh-Towel_Room01_window_frame_corner005">
+		<string name="filename" value="meshes/Towel_Room01_window_frame_corner005.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_window_frame_corner006" name="mesh-Towel_Room01_window_frame_corner006">
+		<string name="filename" value="meshes/Towel_Room01_window_frame_corner006.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_window_frame_side001" name="mesh-Towel_Room01_window_frame_side001">
+		<string name="filename" value="meshes/Towel_Room01_window_frame_side001.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_window_frame_side002" name="mesh-Towel_Room01_window_frame_side002">
+		<string name="filename" value="meshes/Towel_Room01_window_frame_side002.ply"/>
+		<ref id="mat-itu_plywood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wood_wall_008" name="mesh-Towel_Room01_wood_wall_008">
+		<string name="filename" value="meshes/Towel_Room01_wood_wall_008.ply"/>
+		<ref id="mat-itu_wood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wood_wall_009" name="mesh-Towel_Room01_wood_wall_009">
+		<string name="filename" value="meshes/Towel_Room01_wood_wall_009.ply"/>
+		<ref id="mat-itu_wood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wood_wall_1" name="mesh-Towel_Room01_wood_wall_1">
+		<string name="filename" value="meshes/Towel_Room01_wood_wall_1.ply"/>
+		<ref id="mat-itu_wood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wood_wall_2" name="mesh-Towel_Room01_wood_wall_2">
+		<string name="filename" value="meshes/Towel_Room01_wood_wall_2.ply"/>
+		<ref id="mat-itu_wood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wood_wall_3" name="mesh-Towel_Room01_wood_wall_3">
+		<string name="filename" value="meshes/Towel_Room01_wood_wall_3.ply"/>
+		<ref id="mat-itu_wood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wood_wall_4" name="mesh-Towel_Room01_wood_wall_4">
+		<string name="filename" value="meshes/Towel_Room01_wood_wall_4.ply"/>
+		<ref id="mat-itu_wood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wood_wall_5" name="mesh-Towel_Room01_wood_wall_5">
+		<string name="filename" value="meshes/Towel_Room01_wood_wall_5.ply"/>
+		<ref id="mat-itu_wood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wood_wall_6" name="mesh-Towel_Room01_wood_wall_6">
+		<string name="filename" value="meshes/Towel_Room01_wood_wall_6.ply"/>
+		<ref id="mat-itu_wood" name="bsdf"/>
+	</shape>
+	<shape type="ply" id="mesh-Towel_Room01_wood_wall_7" name="mesh-Towel_Room01_wood_wall_7">
+		<string name="filename" value="meshes/Towel_Room01_wood_wall_7.ply"/>
+		<ref id="mat-itu_wood" name="bsdf"/>
+	</shape>
+
+<!-- Volumes -->
+
+</scene>
