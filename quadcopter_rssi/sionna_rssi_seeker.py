@@ -57,7 +57,7 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     # Dosya yolları
     _ROOT = Path(__file__).resolve().parent
     usd_path: Path = _ROOT / "assets" / "scenes" / "simple_room" / "simple_room.usd"
-    sionna_scene_file: Path = _ROOT / "assets" / "scenes" / "simple_room" / "simple_room_resized.xml"
+    sionna_scene_file: Path = _ROOT / "assets" / "scenes" / "simple_room" / "simple_room.xml"
 
     # Simülasyon
     sim: SimulationCfg = SimulationCfg(
