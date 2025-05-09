@@ -1,3 +1,32 @@
+# Copyright (c) 2022‑2025, The Isaac Lab Project Developers.
+# All rights reserved.
+#
+# SPDX‑License‑Identifier: BSD‑3‑Clause
+"""
+QuadcopterRSSIEnv – Isaac Lab ortamının Sionna‑RT PathSolver ile
+entegre edilmiş sürümü **(v2)**.
+
+▶ **YENİ**: Verici (TX) artık her ortam (env) sıfırlandığında rastgele bir
+hedef konuma taşınıyor. Böylece RL ajanı her bölümde (episode) farklı bir
+RF kaynağına yöneliyor ve PathSolver hesapları güncel TX
+konumuna göre yapılıyor.
+
+Önemli eklemeler
+────────────────
+1. `self._tx_pos_w` – tüm ortamlar için TX pozisyonlarını tutan tensor.
+2. `_reset_idx()` içinde, quadcopter hedefi belirlenirken aynı değer TX
+   pozisyonu olarak saklanıyor (`_tx_pos_w`).
+3. `_get_observations()` içinde PathSolver çağrısı yapılmadan önce TX
+   sahne içinde ilgili env’in `_tx_pos_w[i]` konumuna taşınıyor.
+4. Yapılandırmada `tx_power_dbm` ve anten yüksekliği için yalnızca `tx_z`
+   bırakıldı (XY koordinatları artık hataya gerek kalmadan reset’te
+   ayarlanıyor).
+
+Performans
+──────────
+*   Her env için PathSolver seri çalışır; çok büyük `num_envs` değerlerinde
+    yavaşlayabilir. İstenirse RSSI güncelleme aralığı yükseltilebilir.
+"""
 from __future__ import annotations
 
 import os
