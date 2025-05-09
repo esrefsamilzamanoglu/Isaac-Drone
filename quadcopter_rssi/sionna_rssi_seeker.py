@@ -175,7 +175,6 @@ class QuadcopterRSSIEnv(DirectRLEnv):
     # ───────────────────────────────────────────────────────
     def _init_sionna(self):
         # alias'ları kaydet (var‑olanı ezmez, yoksa ekler)
-        print("before",_MATS)
         for alias, base in ITU_ALIASES.items():
             # Eğer alias yoksa doğrudan kopyala
             if alias not in _MATS:
@@ -185,7 +184,6 @@ class QuadcopterRSSIEnv(DirectRLEnv):
                 for rng, props in _MATS[base].items():
                     if rng not in _MATS[alias]:
                         _MATS[alias][rng] = props
-        print("after",_MATS)
         self._sionna_scene = load_scene(str(self.cfg.sionna_scene_file))
         self._sionna_scene.frequency = self.cfg.frequency
         self._sionna_scene.bandwidth = 100e6
@@ -258,7 +256,6 @@ class QuadcopterRSSIEnv(DirectRLEnv):
                 gain = max(gain, fspl_gain)
                 prx_dbm = self.cfg.tx_power_dbm + 10.0 * torch.log10(torch.tensor(gain)).item()
                 rssi_vals.append(prx_dbm)
-            print(f"prx_dbm:{prx_dbm}")
             rssi_dbm_t = torch.tensor(rssi_vals, device=self.device).unsqueeze(1)
             scale = self.cfg.rssi_max_dbm - self.cfg.rssi_min_dbm 
             rssi_clamped = torch.clamp(rssi_dbm_t, self.cfg.rssi_min_dbm, self.cfg.rssi_max_dbm )
