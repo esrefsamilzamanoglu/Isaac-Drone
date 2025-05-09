@@ -205,11 +205,6 @@ class QuadcopterRSSIEnv(DirectRLEnv):
     def _setup_scene(self):
         super()._setup_scene()
 
-        carb.settings.get_settings().set_bool("/viewport/follow_env_index", True)
-        carb.settings.get_settings().set_int("/viewport/env_index", 1)
-        carb.settings.get_settings().set_string("/viewport/follow_mode", "Robot")
-        vus.set_camera_view([1.0, 1.0, 0.5],[0.0, 0.0, 0.0])
-
         self._robot = Articulation(self.cfg.robot)
         self.scene.articulations["robot"] = self._robot
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
