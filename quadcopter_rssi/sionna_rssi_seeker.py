@@ -155,7 +155,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
 
         # Episode log
         self._episode_sums = {k: torch.zeros(self.num_envs, device=self.device) for k in [
-            "lin_vel", "ang_vel", "distance_to_goal"]}
+            "lin_vel", "ang_vel", "distance_to_goal", "rssi_dbm"]}
 
         # Gövde & ağırlık
         self._body_id = self._robot.find_bodies("body")[0]
