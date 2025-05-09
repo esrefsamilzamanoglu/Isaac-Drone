@@ -258,10 +258,11 @@ class QuadcopterRSSIEnv(DirectRLEnv):
                 rssi_vals.append(prx_dbm)
             rssi_dbm_t = torch.tensor(rssi_vals, device=self.device).unsqueeze(1)
             self._rssi_buf = torch.clamp(((rssi_dbm_t + 100.0) / 100.0) * 2.0 - 1.0, -1.0, 1.0)
+            self._episode_sums["rssi_dbm"] += rssi_dbm_t.squeeze() * self.step_dt
         self._rssi_counter += 1
 
 
-        self._episode_sums["rssi_dbm"] += rssi_dbm_t.squeeze() * self.step_dt
+        
 
         desired_pos_b, _ = subtract_frame_transforms(
             self._robot.data.root_state_w[:, :3],
