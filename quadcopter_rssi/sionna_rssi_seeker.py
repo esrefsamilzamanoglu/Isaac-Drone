@@ -160,11 +160,17 @@ class QuadcopterRSSIEnv(DirectRLEnv):
     # ───────────────────────────────────────────────────────
     def _init_sionna(self):
         # alias'ları kaydet (var‑olanı ezmez, yoksa ekler)
-        print(_MATS)
+        print("before",_MATS)
         for alias, base in ITU_ALIASES.items():
+            # Eğer alias yoksa doğrudan kopyala
             if alias not in _MATS:
-                _MATS[alias] = _MATS[base]
-        print(_MATS)
+                _MATS[alias] = _MATS[base].copy()
+            else:
+                # Alias mevcut ama aralık eksik → base'teki eksik frekansları ekle
+                for rng, props in _MATS[base].items():
+                    if rng not in _MATS[alias]:
+                        _MATS[alias][rng] = props
+        print("after",_MATS)
         self._sionna_scene = load_scene(str(self.cfg.sionna_scene_file))
         self._sionna_scene.frequency = self.cfg.frequency
         self._sionna_scene.bandwidth = 100e6
