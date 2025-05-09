@@ -260,6 +260,9 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             self._rssi_buf = torch.clamp(((rssi_dbm_t + 100.0) / 100.0) * 2.0 - 1.0, -1.0, 1.0)
         self._rssi_counter += 1
 
+
+        self._episode_sums["rssi_dbm"] += rssi_dbm_t.squeeze() * self.step_dt
+
         desired_pos_b, _ = subtract_frame_transforms(
             self._robot.data.root_state_w[:, :3],
             self._robot.data.root_state_w[:, 3:7],
@@ -315,12 +318,15 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             # sıfırla
             self._episode_sums[key][env_ids] = 0.0
 
-        # termination istatistikleri
+        # RSSI ortalaması (sum ÷ episode_len)
+        rssi_avg = torch.mean(self._episode_sums["rssi_dbm"][env_ids]) / self.max_episode_length_s
+        extras["Episode_Reward/rssi_dbm"] = rssi_avg.item()
+        extras["Metrics/avg_rssi_dbm"] = rssi_avg.item()
+        self._episode_sums["rssi_dbm"][env_ids] = 0.0
+
         extras["Episode_Termination/died"] = int(torch.count_nonzero(self.reset_terminated[env_ids]))
         extras["Episode_Termination/time_out"] = int(torch.count_nonzero(self.reset_time_outs[env_ids]))
         extras["Metrics/final_distance_to_goal"] = final_distance_to_goal.item()
-        # Ortalama RSSI dBm (bölüm)
-        extras["Metrics/avg_rssi_dbm"] = extras.get("Episode_Reward/rssi_dbm", -100.0)
 
         self.extras["log"] = extras
 
