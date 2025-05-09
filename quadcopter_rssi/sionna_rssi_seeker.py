@@ -126,7 +126,7 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     tx_power_dbm: float = 9.0           # dBm
     max_depth: int = 3
     samples_per_tx: int = 20_000
-    rssi_update_interval: int = 10      # adım
+    rssi_update_interval: int = 1      # adım
 
     ui_window_class_type = QuadcopterEnvWindow
 
