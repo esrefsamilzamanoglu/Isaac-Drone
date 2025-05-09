@@ -126,6 +126,8 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     tx_power_dbm: float = 9.0           # dBm
     max_depth: int = 3
     samples_per_tx: int = 20_000
+    rssi_min_dbm: float = -150.0      
+    rssi_max_dbm: float =  +30.0 
     rssi_update_interval: int = 1      # adım
 
     ui_window_class_type = QuadcopterEnvWindow
@@ -258,13 +260,11 @@ class QuadcopterRSSIEnv(DirectRLEnv):
                 rssi_vals.append(prx_dbm)
             print(f"prx_dbm:{prx_dbm}")
             rssi_dbm_t = torch.tensor(rssi_vals, device=self.device).unsqueeze(1)
-            self._rssi_buf = torch.clamp(((rssi_dbm_t + 100.0) / 100.0) * 2.0 - 1.0, -1.0, 1.0)
+            scale = self.cfg.rssi_max_dbm - self.cfg.rssi_min_dbm 
+            rssi_clamped = torch.clamp(rssi_dbm_t, self.cfg.rssi_min_dbm, self.cfg.rssi_max_dbm )
+            self._rssi_buf = ((rssi_clamped - self.cfg.rssi_min_dbm) / scale) * 2.0 - 1.0  
             self._episode_sums["rssi_dbm"] += rssi_dbm_t.squeeze() * self.step_dt
-            print(f"rssi_dbm_t:{rssi_dbm_t}, rssi_buf{self._rssi_buf}")
         self._rssi_counter += 1
-
-
-        
 
         desired_pos_b, _ = subtract_frame_transforms(
             self._robot.data.root_state_w[:, :3],
