@@ -38,18 +38,32 @@ from isaaclab_assets import CRAZYFLIE_CFG  # isort: skip
 from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
 
 def _try_set_viewport():
-    """Set camera & follow‑mode once OmniKit is available."""
+    """Call after World built; will defer itself until a viewport exists."""
     try:
-        import omni.isaac.core.utils.viewports as vus
-        import carb.settings
-        s = carb.settings.get_settings()
-        s.set_bool("/viewport/follow_env_index", True)
-        s.set_int("/viewport/env_index", 1)
-        s.set_string("/viewport/follow_mode", "Robot")
-        vus.set_camera_view([1.0, 1.0, 0.5], [0.0, 0.0, 0.0])
+        import carb
+        import omni.kit.app as kit_app
+        import omni.kit.viewport.utility as vpu    # yeni yardımcı arayüz
     except ModuleNotFoundError:
-        # Headless veya Kit henüz yüklenmedi
-        pass
+        return  # headless
+
+    # Aktif viewport henüz yoksa bir sonraki frame'e ertele
+    vp_iface = vpu.get_active_viewport()
+    if vp_iface is None:
+        kit_app.get_app().next_update(_try_set_viewport)
+        return
+
+    # Kamera konumu
+    vpu.set_camera_look_at(
+        viewport_api=vp_iface,
+        position=(1.0, 1.0, 0.5),
+        target=(0.0, 0.0, 0.0),
+    )
+
+    # Takip modunu ayarla
+    s = carb.settings.get_settings()
+    s.set_bool("/app/window/viewport/follow_env_index", True)
+    s.set_int ("/app/window/viewport/env_index", 1)
+    s.set_string("/app/window/viewport/follow_mode", "Robot")
 
 # ――― malzeme eşleştirmeleri ―――
 ITU_ALIASES = {
@@ -83,6 +97,7 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     observation_space: int = 10
     debug_vis: bool = True
 
+    usd_enable: bool = False
     # Dosya yolları
     _ROOT = Path(__file__).resolve().parent
     usd_path: Path = _ROOT / "assets" / "scenes" / "simple_room" / "simple_room.usd"
@@ -100,12 +115,15 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
             restitution=0.0,
         ),
     )
-    terrain = TerrainImporterCfg(
-        prim_path="/World/envs/env_0",
-        terrain_type="usd",
-        usd_path=str(usd_path),
-        collision_group=-1,
-        debug_vis=False,
+    terrain: Optional[TerrainImporterCfg] = (
+        TerrainImporterCfg(
+            prim_path="/World/envs/env_0",
+            terrain_type="usd",
+            usd_path=str(usd_path),
+            collision_group=-1,
+            debug_vis=False,
+        )
+        if usd_enable else None
     )
 
     # Sahne
@@ -207,9 +225,19 @@ class QuadcopterRSSIEnv(DirectRLEnv):
 
         self._robot = Articulation(self.cfg.robot)
         self.scene.articulations["robot"] = self._robot
-        self.cfg.terrain.num_envs = self.scene.cfg.num_envs
-        self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
-        self._terrain = self.cfg.terrain.class_type(self.cfg.terrain)
+
+        if self.cfg.usd_enable and self.cfg.terrain is not None:
+            self.cfg.terrain.num_envs   = self.scene.cfg.num_envs
+            self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
+            self._terrain = self.cfg.terrain.class_type(self.cfg.terrain)
+        else:
+            # USD devre dışı → düz zemin kabul edip env_origin’leri sıfırla
+            self._terrain = type(
+                "DummyTerrain",
+                (),
+                {"env_origins": torch.zeros(self.num_envs, 3, device=self.device)},
+            )()
+            
         self.scene.clone_environments(copy_from_source=True)
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
@@ -319,10 +347,9 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             self._episode_sums[key][env_ids] = 0.0
 
         # RSSI ortalaması (sum ÷ episode_len)
-        rssi_avg = torch.mean(self._episode_sums["rssi_dbm"][env_ids]) / self.max_episode_length_s
-        extras["Episode_Reward/rssi_dbm"] = rssi_avg.item()
-        extras["Metrics/avg_rssi_dbm"] = rssi_avg.item()
-        self._episode_sums["rssi_dbm"][env_ids] = 0.0
+        #rssi_avg = torch.mean(self._episode_sums["rssi_dbm"][env_ids]) / self.max_episode_length_s
+        #extras["Metrics/avg_rssi_dbm"] = rssi_avg.item()
+        #self._episode_sums["rssi_dbm"][env_ids] = 0.0
 
         extras["Episode_Termination/died"] = int(torch.count_nonzero(self.reset_terminated[env_ids]))
         extras["Episode_Termination/time_out"] = int(torch.count_nonzero(self.reset_time_outs[env_ids]))
