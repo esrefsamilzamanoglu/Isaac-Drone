@@ -24,10 +24,19 @@ import mitsuba as mi
 mi.set_variant("cuda_ad_mono_polarized")
 
 from sionna.rt import load_scene, PlanarArray, Transmitter, Receiver, PathSolver
+from sionna.rt.radio_materials.itu_material import _ITU_MATERIALS
 
 # Isaac Lab hazır konfigürasyonlar
 from isaaclab_assets import CRAZYFLIE_CFG  # isort: skip
 from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
+
+
+# ――― malzeme eşleştirmeleri ―――
+ITU_ALIASES = {
+    "floorboard"    : "wood",
+    "ceiling_board" : "plasterboard",
+    "plywood"       : "wood",
+}
 
 # ══════════════════════════════════════════════════════════
 # UI Penceresi
@@ -143,6 +152,13 @@ class QuadcopterRSSIEnv(DirectRLEnv):
     # Sionna setup
     # ───────────────────────────────────────────────────────
     def _init_sionna(self):
+        # alias'ları kaydet (var‑olanı ezmez, yoksa ekler)
+        for alias, base in ITU_ALIASES.items():
+            if alias not in _ITU_MATERIALS:
+                _ITU_MATERIALS[alias] = _ITU_MATERIALS[base]
+
+
+
         self._sionna_scene = load_scene(str(self.cfg.sionna_scene_file))
         self._sionna_scene.frequency = self.cfg.frequency
         self._sionna_scene.bandwidth = 100e6
