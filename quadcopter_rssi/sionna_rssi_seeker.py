@@ -119,7 +119,7 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     # Ödül katsayıları
     lin_vel_reward_scale: float = -0.05
     ang_vel_reward_scale: float = -0.01
-    distance_to_goal_reward_scale: float = 50.0
+    distance_to_goal_reward_scale: float = 5.0
 
     # Sionna
     frequency: float = 2.4e9            # Hz
