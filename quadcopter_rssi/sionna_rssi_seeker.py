@@ -50,6 +50,7 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     episode_length_s: float = 10.0
     decimation: int = 2
     action_space: int = 4
+    state_space: int = 0 
     observation_space: int = 10
     debug_vis: bool = True
 
