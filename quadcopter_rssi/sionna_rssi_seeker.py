@@ -168,7 +168,8 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
         self._terrain = self.cfg.terrain.class_type(self.cfg.terrain)
         self.scene.clone_environments(copy_from_source=True)
-        sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75)).func("/World/Light", None)
+        light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
+        light_cfg.func("/World/Light", light_cfg)
 
     # ───────────────────────────────────────────────────────
     # Aksiyonlar
