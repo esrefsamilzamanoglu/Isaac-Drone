@@ -21,7 +21,7 @@ from isaaclab.utils.math import subtract_frame_transforms
 
 # Sionna‑RT & Mitsuba
 import mitsuba as mi
-mi.set_variant("llvm_ad_mono_polarized")
+mi.set_variant("cuda_ad_mono_polarized")
 
 from sionna.rt import load_scene, PlanarArray, Transmitter, Receiver, PathSolver
 
