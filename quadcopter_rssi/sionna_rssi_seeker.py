@@ -7,9 +7,6 @@ from typing import Optional
 import gymnasium as gym
 import torch
 
-import omni.isaac.core.utils.viewports as vus
-import carb.settings
-
 # Isaac Lab
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation, ArticulationCfg
@@ -40,6 +37,19 @@ except ImportError:                     # 1.x.y    (yeni)
 from isaaclab_assets import CRAZYFLIE_CFG  # isort: skip
 from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
 
+def _try_set_viewport():
+    """Set camera & follow‑mode once OmniKit is available."""
+    try:
+        import omni.isaac.core.utils.viewports as vus
+        import carb.settings
+        s = carb.settings.get_settings()
+        s.set_bool("/viewport/follow_env_index", True)
+        s.set_int("/viewport/env_index", 1)
+        s.set_string("/viewport/follow_mode", "Robot")
+        vus.set_camera_view([1.0, 1.0, 0.5], [0.0, 0.0, 0.0])
+    except ModuleNotFoundError:
+        # Headless veya Kit henüz yüklenmedi
+        pass
 
 # ――― malzeme eşleştirmeleri ―――
 ITU_ALIASES = {
@@ -208,6 +218,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         self.scene.clone_environments(copy_from_source=True)
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg)
+        _try_set_viewport()
 
     # ───────────────────────────────────────────────────────
     # Aksiyonlar
