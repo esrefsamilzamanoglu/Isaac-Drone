@@ -143,7 +143,7 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     frequency: float = 2.4e9            # Hz
     tx_power_dbm: float = 9.0           # dBm
     max_depth: int = 3
-    samples_per_tx: int = 20_000
+    samples_per_tx: int = 100 #20_000
     rssi_min_dbm: float = -150.0      
     rssi_max_dbm: float =  +30.0 
     rssi_update_interval: int = 1      # adım
@@ -345,11 +345,6 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             extras[f"Episode_Reward/{key}"] = (episodic_sum_avg / self.max_episode_length_s).item()
             # sıfırla
             self._episode_sums[key][env_ids] = 0.0
-
-        # RSSI ortalaması (sum ÷ episode_len)
-        #rssi_avg = torch.mean(self._episode_sums["rssi_dbm"][env_ids]) / self.max_episode_length_s
-        #extras["Metrics/avg_rssi_dbm"] = rssi_avg.item()
-        #self._episode_sums["rssi_dbm"][env_ids] = 0.0
 
         extras["Episode_Termination/died"] = int(torch.count_nonzero(self.reset_terminated[env_ids]))
         extras["Episode_Termination/time_out"] = int(torch.count_nonzero(self.reset_time_outs[env_ids]))
