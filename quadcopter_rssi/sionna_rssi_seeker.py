@@ -7,6 +7,9 @@ from typing import Optional
 import gymnasium as gym
 import torch
 
+import omni.isaac.core.utils.viewports as vus
+import carb.settings
+
 # Isaac Lab
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation, ArticulationCfg
@@ -96,7 +99,7 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     )
 
     # Sahne
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=64, env_spacing=8, replicate_physics=True)
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=1, env_spacing=8, replicate_physics=True)
 
     # Robot
     robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -190,6 +193,13 @@ class QuadcopterRSSIEnv(DirectRLEnv):
     # Isaac Lab sahne kurulumu
     # ───────────────────────────────────────────────────────
     def _setup_scene(self):
+        super()._setup_scene()
+
+        carb.settings.get_settings().set_bool("/viewport/follow_env_index", True)
+        carb.settings.get_settings().set_int("/viewport/env_index", 1)
+        carb.settings.get_settings().set_string("/viewport/follow_mode", "Robot")
+        vus.set_camera_view([1.0, 1.0, 0.5],[0.0, 0.0, 0.0])
+
         self._robot = Articulation(self.cfg.robot)
         self.scene.articulations["robot"] = self._robot
         self.cfg.terrain.num_envs = self.scene.cfg.num_envs
@@ -287,9 +297,26 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         if env_ids is None or len(env_ids) == self.num_envs:
             env_ids = self._robot._ALL_INDICES
 
-        # episode logging (kısaltıldı)
-        for k in self._episode_sums:
-            self._episode_sums[k][env_ids] = 0.0
+        # Episode log hesaplamaları 
+        final_distance_to_goal = torch.linalg.norm(
+            self._desired_pos_w[env_ids] - self._robot.data.root_pos_w[env_ids], dim=1
+        ).mean()
+
+        extras: dict[str, float] = {}
+        for key in self._episode_sums.keys():
+            episodic_sum_avg = torch.mean(self._episode_sums[key][env_ids])
+            extras[f"Episode_Reward/{key}"] = (episodic_sum_avg / self.max_episode_length_s).item()
+            # sıfırla
+            self._episode_sums[key][env_ids] = 0.0
+
+        # termination istatistikleri
+        extras["Episode_Termination/died"] = int(torch.count_nonzero(self.reset_terminated[env_ids]))
+        extras["Episode_Termination/time_out"] = int(torch.count_nonzero(self.reset_time_outs[env_ids]))
+        extras["Metrics/final_distance_to_goal"] = final_distance_to_goal.item()
+        # Ortalama RSSI dBm (bölüm)
+        extras["Metrics/avg_rssi_dbm"] = extras.get("Episode_Reward/rssi_dbm", -100.0)
+
+        self.extras["log"] = extras
 
         # Isaac Lab reset
         self._robot.reset(env_ids)
