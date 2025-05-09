@@ -24,7 +24,14 @@ import mitsuba as mi
 mi.set_variant("cuda_ad_mono_polarized")
 
 from sionna.rt import load_scene, PlanarArray, Transmitter, Receiver, PathSolver
-from sionna.rt.radio_materials.itu_material import _ITU_MATERIALS
+
+# --- Özellik sözlüğünü yakala (sürüm farkı için try/except) ------------------
+try:                                    # 0.19.x   (eski)
+    from sionna.rt.radio_materials.itu_material import _ITU_MATERIALS as _MATS
+except ImportError:                     # 1.x.y    (yeni)
+    from sionna.rt.radio_materials import itu as _itu
+    _MATS = getattr(_itu, "ITU_MATERIALS", getattr(_itu, "ITU_MATERIALS_PROPERTIES"))
+
 
 # Isaac Lab hazır konfigürasyonlar
 from isaaclab_assets import CRAZYFLIE_CFG  # isort: skip
@@ -153,11 +160,10 @@ class QuadcopterRSSIEnv(DirectRLEnv):
     # ───────────────────────────────────────────────────────
     def _init_sionna(self):
         # alias'ları kaydet (var‑olanı ezmez, yoksa ekler)
+         
         for alias, base in ITU_ALIASES.items():
-            if alias not in _ITU_MATERIALS:
-                _ITU_MATERIALS[alias] = _ITU_MATERIALS[base]
-
-
+            if alias not in _MATS:
+                _MATS[alias] = _MATS[base]
 
         self._sionna_scene = load_scene(str(self.cfg.sionna_scene_file))
         self._sionna_scene.frequency = self.cfg.frequency
