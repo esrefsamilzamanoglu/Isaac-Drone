@@ -128,7 +128,7 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     )
 
     # Sahne
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=1024, env_spacing=8, replicate_physics=True)
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=64, env_spacing=8, replicate_physics=True)
 
     # Robot
     robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
