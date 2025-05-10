@@ -144,7 +144,7 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     frequency: float = 2.4e9            # Hz
     tx_power_dbm: float = 9.0           # dBm
     max_depth: int = 3
-    samples_per_tx: int = 20_000
+    samples_per_tx: int = 100
     rssi_min_dbm: float = -150.0      
     rssi_max_dbm: float =  +30.0 
     rssi_update_interval: int = 1      # adım
