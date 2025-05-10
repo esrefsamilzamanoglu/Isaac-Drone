@@ -316,7 +316,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
                                      self.cfg.rssi_min_dbm,
                                      self.cfg.rssi_max_dbm)
             self._rssi_buf = ((clamped - self.cfg.rssi_min_dbm) / scale) * 2.0 - 1.0
-            self._episode_sums["rssi_dbm"] += rssi_dbm_t.squeeze() * self.step_dt
+            self._episode_sums["rssi_dbm"] += prx_dbm * self.step_dt
 
         self._rssi_counter += 1
 
