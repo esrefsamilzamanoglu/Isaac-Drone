@@ -227,8 +227,8 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             self._tx_devices.append(tx)
             self._rx_devices.append(rx)
 
-        # PathSolver’ı CUDA Graphs ile başlatmak launch latency’yi düşürür
-        self._ps = PathSolver(loop_mode="cuda_graphs")
+        self._ps = PathSolver()
+        self._ps.loop_mode = "symbolic"
 
     # ───────────────────────────────────────────────────────
     # Isaac Lab sahne kurulumu
