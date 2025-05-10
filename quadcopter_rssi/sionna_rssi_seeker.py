@@ -313,13 +313,20 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             gain   = torch.maximum(gain, fspl)
 
             # 6) dBm’e çevir & normalize et
-            prx_dbm     = self.cfg.tx_power_dbm + 10.0 * torch.log10(gain)
-            clamped    = prx_dbm.clamp(self.cfg.rssi_min_dbm,
-                                       self.cfg.rssi_max_dbm)
-            self._rssi_buf = (((clamped - self.cfg.rssi_min_dbm)
-                                / (self.cfg.rssi_max_dbm - self.cfg.rssi_min_dbm))
-                                * 2.0 - 1.0).unsqueeze(1)
+            prx_dbm = self.cfg.tx_power_dbm + 10.0 * torch.log10(gain)
+
+            # 2) Episode log: yine [N] + [N]
+            print(prx_dbm.shape)
             self._episode_sums["rssi_dbm"] += prx_dbm * self.step_dt
+
+            # 3) Clamp & normalize için [N]
+            prx_dbm_clamped = prx_dbm.clamp(self.cfg.rssi_min_dbm,
+                                            self.cfg.rssi_max_dbm)
+
+            # 4) rssi_buf oluştur: [N] → [N,1]
+            scale = self.cfg.rssi_max_dbm - self.cfg.rssi_min_dbm
+            self._rssi_buf = (((prx_dbm_clamped - self.cfg.rssi_min_dbm)
+                            / scale) * 2.0 - 1.0).unsqueeze(1)
 
         self._rssi_counter += 1
 
