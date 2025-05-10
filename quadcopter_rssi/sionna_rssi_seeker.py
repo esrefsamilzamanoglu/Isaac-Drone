@@ -175,8 +175,12 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         self._rssi_counter = 0
 
         # Episode log
-        self._episode_sums = {k: torch.zeros(self.num_envs, device=self.device) for k in [
-            "lin_vel", "ang_vel", "distance_to_goal", "rssi_dbm"]}
+        self._episode_sums = {
+            "lin_vel":          torch.zeros(self.num_envs, device=self.device),
+            "ang_vel":          torch.zeros(self.num_envs, device=self.device),
+            "distance_to_goal": torch.zeros(self.num_envs, device=self.device),
+            "rssi_dbm":         torch.zeros(self.num_envs, device=self.device),
+        }
 
         # Gövde & ağırlık
         self._body_id = self._robot.find_bodies("body")[0]
@@ -310,12 +314,11 @@ class QuadcopterRSSIEnv(DirectRLEnv):
 
             # 6) dBm’e çevir & normalize et
             prx_dbm     = self.cfg.tx_power_dbm + 10.0 * torch.log10(gain)
-            rssi_dbm_t  = prx_dbm.unsqueeze(1)                          # [N,1]
-            scale       = self.cfg.rssi_max_dbm - self.cfg.rssi_min_dbm
-            clamped     = torch.clamp(rssi_dbm_t,
-                                     self.cfg.rssi_min_dbm,
-                                     self.cfg.rssi_max_dbm)
-            self._rssi_buf = ((clamped - self.cfg.rssi_min_dbm) / scale) * 2.0 - 1.0
+            clamped    = prx_dbm.clamp(self.cfg.rssi_min_dbm,
+                                       self.cfg.rssi_max_dbm)
+            self._rssi_buf = (((clamped - self.cfg.rssi_min_dbm)
+                                / (self.cfg.rssi_max_dbm - self.cfg.rssi_min_dbm))
+                                * 2.0 - 1.0).unsqueeze(1)
             self._episode_sums["rssi_dbm"] += prx_dbm * self.step_dt
 
         self._rssi_counter += 1
