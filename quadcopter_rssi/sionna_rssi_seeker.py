@@ -6,6 +6,7 @@ from typing import Optional
 
 import gymnasium as gym
 import torch
+import math
 
 # Isaac Lab
 import isaaclab.sim as sim_utils
@@ -137,13 +138,13 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     # Ödül katsayıları
     lin_vel_reward_scale: float = -0.05
     ang_vel_reward_scale: float = -0.01
-    distance_to_goal_reward_scale: float = 5.0
+    distance_to_goal_reward_scale: float = 30.0
 
     # Sionna
     frequency: float = 2.4e9            # Hz
     tx_power_dbm: float = 9.0           # dBm
     max_depth: int = 3
-    samples_per_tx: int = 100 #20_000
+    samples_per_tx: int = 20_000
     rssi_min_dbm: float = -150.0      
     rssi_max_dbm: float =  +30.0 
     rssi_update_interval: int = 1      # adım
@@ -209,13 +210,25 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         self._sionna_scene.tx_array = arr
         self._sionna_scene.rx_array = arr
 
-        # Tek verici & alıcı
-        self._tx = Transmitter("tx0", position=[0, 0, 0], orientation=[0, 0, 0], power_dbm=self.cfg.tx_power_dbm)
-        self._rx = Receiver("rx0", position=[0, 0, 0], orientation=[0, 0, 0])
-        self._sionna_scene.add(self._tx)
-        self._sionna_scene.add(self._rx)
+        
+        # --- Burası ÖNEMLİ: N adet verici & alıcı ekle ---
+        self._tx_devices: list[Transmitter] = []
+        self._rx_devices: list[Receiver]    = []
+        for i in range(self.num_envs):
+            tx = Transmitter(f"tx{i}",
+                             position=[0,0,0],
+                             orientation=[0,0,0],
+                             power_dbm=self.cfg.tx_power_dbm)
+            rx = Receiver(f"rx{i}",
+                          position=[0,0,0],
+                          orientation=[0,0,0])
+            self._sionna_scene.add(tx)
+            self._sionna_scene.add(rx)
+            self._tx_devices.append(tx)
+            self._rx_devices.append(rx)
 
-        self._ps = PathSolver()
+        # PathSolver’ı CUDA Graphs ile başlatmak launch latency’yi düşürür
+        self._ps = PathSolver(loop_mode="cuda_graphs")
 
     # ───────────────────────────────────────────────────────
     # Isaac Lab sahne kurulumu
@@ -259,36 +272,52 @@ class QuadcopterRSSIEnv(DirectRLEnv):
     # ───────────────────────────────────────────────────────
     def _get_observations(self):
         if self._rssi_counter % self.cfg.rssi_update_interval == 0:
-            rssi_vals = []
-            for i in range(self.num_envs):
-                rx_pos = self._robot.data.root_pos_w[i, :3].detach().cpu().numpy()
-                tx_pos = self._tx_pos_w[i].detach().cpu().numpy()
-                self._rx.position = rx_pos.tolist()
-                self._tx.position = tx_pos.tolist()
+            # 1) Tüm Tx/Rx pozisyonlarını topluca CPU’ya al
+            tx_cpu = self._tx_pos_w.cpu().numpy()
+            rx_cpu = self._robot.data.root_pos_w[:, :3].cpu().numpy()
 
-                paths = self._ps(scene=self._sionna_scene,
-                                 max_depth=self.cfg.max_depth,
-                                 max_num_paths_per_src=self.cfg.samples_per_tx * 2,
-                                 samples_per_src=self.cfg.samples_per_tx,
-                                 synthetic_array=True,
-                                 los=True,
-                                 specular_reflection=True,
-                                 diffuse_reflection=True,
-                                 refraction=True,
-                                 seed=0)
-                a, _ = paths.cir(normalize_delays=True, out_type="numpy")
-                gain = float((abs(a) ** 2).sum())
-                d = max(float(((rx_pos - tx_pos) ** 2).sum()) ** 0.5, 1e-3)
-                lam = 3e8 / self.cfg.frequency
-                fspl_gain = (lam / (4 * 3.1415926535 * d)) ** 2
-                gain = max(gain, fspl_gain)
-                prx_dbm = self.cfg.tx_power_dbm + 10.0 * torch.log10(torch.tensor(gain)).item()
-                rssi_vals.append(prx_dbm)
-            rssi_dbm_t = torch.tensor(rssi_vals, device=self.device).unsqueeze(1)
-            scale = self.cfg.rssi_max_dbm - self.cfg.rssi_min_dbm 
-            rssi_clamped = torch.clamp(rssi_dbm_t, self.cfg.rssi_min_dbm, self.cfg.rssi_max_dbm )
-            self._rssi_buf = ((rssi_clamped - self.cfg.rssi_min_dbm) / scale) * 2.0 - 1.0  
+            # 2) Her cihaza tek tek ata
+            for tx, p in zip(self._tx_devices, tx_cpu):
+                tx.position = p.tolist()
+            for rx, p in zip(self._rx_devices, rx_cpu):
+                rx.position = p.tolist()
+
+            # 3) Tek seferde tüm yolları hesaplat
+            paths = self._ps(
+                scene=self._sionna_scene,
+                max_depth=self.cfg.max_depth,
+                samples_per_src=self.cfg.samples_per_tx,
+                synthetic_array=True,
+                los=True,
+                specular_reflection=True,
+                diffuse_reflection=True,
+                refraction=True,
+                seed=0,
+            )
+
+            # 4) Karmaşık kazanç katsayılarını Torch tensör olarak çek
+            a_torch, _ = paths.cir(normalize_delays=True, out_type="torch")
+            a_torch = a_torch.to(self.device)                           # [N_rx, N_tx, N_paths]
+            power   = (torch.abs(a_torch)**2).sum(dim=-1)               # [N_rx, N_tx]
+            gain    = torch.diagonal(power)                             # [N] — sadece (i,i) çiftleri
+
+            # 5) FSPL garantisi için fallback
+            rx_pos = self._robot.data.root_pos_w[:, :3]
+            d      = torch.linalg.norm(rx_pos - self._tx_pos_w, dim=1).clamp(min=1e-3)
+            lam    = 3e8 / self.cfg.frequency
+            fspl   = (lam / (4 * math.pi * d))**2
+            gain   = torch.maximum(gain, fspl)
+
+            # 6) dBm’e çevir & normalize et
+            prx_dbm     = self.cfg.tx_power_dbm + 10.0 * torch.log10(gain)
+            rssi_dbm_t  = prx_dbm.unsqueeze(1)                          # [N,1]
+            scale       = self.cfg.rssi_max_dbm - self.cfg.rssi_min_dbm
+            clamped     = torch.clamp(rssi_dbm_t,
+                                     self.cfg.rssi_min_dbm,
+                                     self.cfg.rssi_max_dbm)
+            self._rssi_buf = ((clamped - self.cfg.rssi_min_dbm) / scale) * 2.0 - 1.0
             self._episode_sums["rssi_dbm"] += rssi_dbm_t.squeeze() * self.step_dt
+
         self._rssi_counter += 1
 
         desired_pos_b, _ = subtract_frame_transforms(
