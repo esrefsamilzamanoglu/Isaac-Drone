@@ -10,7 +10,7 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, R
 
 @configclass
 class QuadcopterPPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    num_steps_per_env = 24
+    num_steps_per_env = 128
     max_iterations = 200
     save_interval = 50
     experiment_name = "quadcopter_rssi"
@@ -18,10 +18,10 @@ class QuadcopterPPORunnerCfg(RslRlOnPolicyRunnerCfg):
 
     policy = RslRlPpoActorCriticRecurrentCfg(
         rnn_type="lstm",
-        rnn_hidden_dim=256,
+        rnn_hidden_dim=16,
         rnn_num_layers=1,
-        actor_hidden_dims=[128, 128],
-        critic_hidden_dims=[128, 128],
+        actor_hidden_dims=[16, 16],
+        critic_hidden_dims=[16, 16],
         activation="elu",
         init_noise_std=1.0,
     )
@@ -31,8 +31,8 @@ class QuadcopterPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         clip_param=0.2,
         entropy_coef=0.0,
         num_learning_epochs=5,
-        num_mini_batches=4,
-        learning_rate=1.0e-3,
+        num_mini_batches=32,
+        learning_rate=1e-4,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,

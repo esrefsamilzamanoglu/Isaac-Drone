@@ -1,110 +1,84 @@
 from __future__ import annotations
+"""Quadcopter RSSI environment (Isaac Lab + Sionna‑RT)
+=====================================================
+* RL + physics logic resides here.
+* All UI helpers live in **quadcopter_vis.py** (imported below).
+* Headless runs remain possible; Omniverse widgets load only when a viewer exists.
+"""
 
-import os
+# -----------------------------------------------------------------------------
+# Standard / third‑party imports
+# -----------------------------------------------------------------------------
+import os, sys, math
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 import gymnasium as gym
 import torch
-import math
 
-# Isaac Lab
+# -----------------------------------------------------------------------------
+# Isaac Lab imports
+# -----------------------------------------------------------------------------
 import isaaclab.sim as sim_utils
 from isaaclab.assets import Articulation, ArticulationCfg
 from isaaclab.envs import DirectRLEnv, DirectRLEnvCfg
-from isaaclab.envs.ui import BaseEnvWindow
-from isaaclab.markers import VisualizationMarkers
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.math import subtract_frame_transforms
+from isaaclab.markers import VisualizationMarkers
 
-# Sionna‑RT & Mitsuba
+from isaaclab_assets import CRAZYFLIE_CFG  # pre‑defined robot
+from isaaclab.markers import CUBOID_MARKER_CFG
+
+# -----------------------------------------------------------------------------
+# Local helper: import sibling `quadcopter_vis.py`
+# -----------------------------------------------------------------------------
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from quadcopter_vis import (
+    make_single_sphere_vis,
+    make_traj_point_vis,
+    QuadcopterEnvWindow,
+)
+# -----------------------------------------------------------------------------
+# Sionna‑RT & Mitsuba setup
+# -----------------------------------------------------------------------------
 import mitsuba as mi
 mi.set_variant("cuda_ad_mono_polarized")
 
 from sionna.rt import load_scene, PlanarArray, Transmitter, Receiver, PathSolver
 
-# --- Özellik sözlüğünü yakala (sürüm farkı için try/except) ------------------
-try:                                    # 0.19.x   (eski)
+try:  # Sionna ≤ 0.19.x
     from sionna.rt.radio_materials.itu_material import _ITU_MATERIALS as _MATS
-except ImportError:                     # 1.x.y    (yeni)
+except ImportError:  # Sionna ≥ 1.0
     from sionna.rt.radio_materials import itu as _itu
     _MATS = getattr(_itu, "ITU_MATERIALS", getattr(_itu, "ITU_MATERIALS_PROPERTIES"))
 
+# alias → base material mapping ------------------------------------------------
+ITU_ALIASES = {"floorboard": "wood", "ceiling_board": "plasterboard", "plywood": "wood"}
 
-# Isaac Lab hazır konfigürasyonlar
-from isaaclab_assets import CRAZYFLIE_CFG  # isort: skip
-from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
+# ============================================================================
+# Configuration dataclass
+# ============================================================================
 
-def _try_set_viewport():
-    """Call after World built; will defer itself until a viewport exists."""
-    try:
-        import carb
-        import omni.kit.app as kit_app
-        import omni.kit.viewport.utility as vpu    # yeni yardımcı arayüz
-    except ModuleNotFoundError:
-        return  # headless
-
-    # Aktif viewport henüz yoksa bir sonraki frame'e ertele
-    vp_iface = vpu.get_active_viewport()
-    if vp_iface is None:
-        kit_app.get_app().next_update(_try_set_viewport)
-        return
-
-    # Kamera konumu
-    vpu.set_camera_look_at(
-        viewport_api=vp_iface,
-        position=(1.0, 1.0, 0.5),
-        target=(0.0, 0.0, 0.0),
-    )
-
-    # Takip modunu ayarla
-    s = carb.settings.get_settings()
-    s.set_bool("/app/window/viewport/follow_env_index", True)
-    s.set_int ("/app/window/viewport/env_index", 1)
-    s.set_string("/app/window/viewport/follow_mode", "Robot")
-
-# ――― malzeme eşleştirmeleri ―――
-ITU_ALIASES = {
-    "floorboard"    : "wood",
-    "ceiling_board" : "plasterboard",
-    "plywood"       : "wood",
-}
-
-# ══════════════════════════════════════════════════════════
-# UI Penceresi
-# ══════════════════════════════════════════════════════════
-class QuadcopterEnvWindow(BaseEnvWindow):
-    def __init__(self, env: "QuadcopterRSSIEnv", window_name: str = "IsaacLab"):
-        super().__init__(env, window_name)
-        with self.ui_window_elements["main_vstack"]:
-            with self.ui_window_elements["debug_frame"]:
-                with self.ui_window_elements["debug_vstack"]:
-                    self._create_debug_vis_ui_element("targets", self.env)
-
-
-# ══════════════════════════════════════════════════════════
-# Yapılandırma
-# ══════════════════════════════════════════════════════════
 @configclass
 class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
-    # Isaac Lab
+    # Isaac Lab basics
     episode_length_s: float = 10.0
     decimation: int = 2
     action_space: int = 4
-    state_space: int = 0 
-    observation_space: int = 10
+    state_space: int = 0
+    observation_space: int = 10  # 9 low‑dim + 1 RSSI
     debug_vis: bool = True
 
-    usd_enable: bool = False
-    # Dosya yolları
+    # Paths
     _ROOT = Path(__file__).resolve().parent
-    usd_path: Path = _ROOT / "assets" / "scenes" / "simple_room" / "simple_room.usd"
-    sionna_scene_file: Path = _ROOT / "assets" / "scenes" / "simple_room" / "simple_room.xml"
+    usd_enable: bool = True
+    usd_path: Path = _ROOT / "assets/scenes/simple_room/simple_room.usd"
+    sionna_scene_file: Path = _ROOT / "assets/scenes/simple_room/simple_room.xml"
 
-    # Simülasyon
+    # Simulation
     sim: SimulationCfg = SimulationCfg(
         dt=1 / 100,
         render_interval=decimation,
@@ -124,122 +98,124 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
             collision_group=-1,
             debug_vis=False,
         )
-        if usd_enable else None
+        if usd_enable
+        else None
     )
 
-    # Sahne
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=64, env_spacing=8, replicate_physics=True)
+    # Scene replication
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=30, env_spacing=8, replicate_physics=True)
 
-    # Robot
+    # Robot params
     robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
     thrust_to_weight: float = 1.9
     moment_scale: float = 0.01
 
-    # Ödül katsayıları
+    # Reward scales
     lin_vel_reward_scale: float = -0.05
     ang_vel_reward_scale: float = -0.01
-    distance_to_goal_reward_scale: float = 30.0
+    distance_to_goal_reward_scale: float = 50.0
+    died_scale: float = -1.0
 
-    # Sionna
-    frequency: float = 2.4e9            # Hz
-    tx_power_dbm: float = 9.0           # dBm
-    max_depth: int = 3
+    # Sionna RF params
+    frequency: float = 2.4e9  # Hz
+    tx_power_dbm: float = 9.0
+    max_depth: int = 2
     samples_per_tx: int = 100
-    rssi_min_dbm: float = -150.0      
-    rssi_max_dbm: float =  +30.0 
-    rssi_update_interval: int = 1      # adım
+    rssi_min_dbm: float = -150.0
+    rssi_max_dbm: float = 30.0
+    rssi_update_interval: int = 1
 
+    # UI class
     ui_window_class_type = QuadcopterEnvWindow
 
+# ============================================================================
+# Environment implementation
+# ============================================================================
 
-# ══════════════════════════════════════════════════════════
-# Ortam
-# ══════════════════════════════════════════════════════════
 class QuadcopterRSSIEnv(DirectRLEnv):
+    """Isaac Lab quadcopter with Sionna‑RT‑based RSSI simulation."""
+
     cfg: QuadcopterRSSIEnvCfg
 
+    # ----------------------------- init ----------------------------------
     def __init__(self, cfg: QuadcopterRSSIEnvCfg, render_mode: Optional[str] = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
 
-        # Isaac Lab tamponları
-        self._actions = torch.zeros(self.num_envs, gym.spaces.flatdim(self.single_action_space), device=self.device)
-        self._thrust = torch.zeros(self.num_envs, 1, 3, device=self.device)
-        self._moment = torch.zeros(self.num_envs, 1, 3, device=self.device)
+        self.traj_len = 200
+        self._traj_buf = torch.zeros((self.num_envs, self.traj_len, 3), device=self.device)
+        self._traj_head = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self.traj_vis: VisualizationMarkers = make_traj_point_vis(self.traj_len)
 
-        # Hedef / TX pozisyonları
+        # last RSSI measurement
+        self._last_rssi = torch.zeros(self.num_envs, device=self.device)
+
+        # action → force/moment buffers
+        flat_dim = gym.spaces.flatdim(self.single_action_space)
+        self._actions = torch.zeros(self.num_envs, flat_dim, device=self.device)
+        self._thrust  = torch.zeros(self.num_envs, 1, 3, device=self.device)
+        self._moment  = torch.zeros(self.num_envs, 1, 3, device=self.device)
+
+        # goal/TX positions
         self._desired_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
-        self._tx_pos_w = torch.zeros_like(self._desired_pos_w)
+        self._tx_pos_w      = torch.zeros_like(self._desired_pos_w)
 
-        # RSSI buf & sayaç
+        # RSSI buffers
         self._rssi_buf = torch.zeros(self.num_envs, 1, device=self.device)
         self._rssi_counter = 0
 
-        # Episode log
+        # episodic sums
         self._episode_sums = {
-            "lin_vel":          torch.zeros(self.num_envs, device=self.device),
-            "ang_vel":          torch.zeros(self.num_envs, device=self.device),
-            "distance_to_goal": torch.zeros(self.num_envs, device=self.device),
-            "rssi_dbm":         torch.zeros(self.num_envs, device=self.device),
+            key: torch.zeros(self.num_envs, dtype=torch.float, device=self.device)
+            for key in [
+                "lin_vel",
+                "ang_vel",
+                "distance_to_goal",
+                "died",
+            ]
         }
 
-        # Gövde & ağırlık
-        self._body_id = self._robot.find_bodies("body")[0]
-        self._robot_mass = self._robot.root_physx_view.get_masses()[0].sum()
-        g = torch.tensor(self.sim.cfg.gravity, device=self.device).norm()
-        self._robot_weight = (self._robot_mass * g).item()
+        # mass/weight
+        self._body_id     = self._robot.find_bodies("body")[0]
+        self._robot_mass  = self._robot.root_physx_view.get_masses()[0].sum()
+        self._robot_weight = (self._robot_mass * torch.tensor(self.sim.cfg.gravity, device=self.device).norm()).item()
 
-        # Sionna kurulumu
+        # Sionna scene
         self._init_sionna()
 
         self.set_debug_vis(self.cfg.debug_vis)
 
-    # ───────────────────────────────────────────────────────
-    # Sionna setup
-    # ───────────────────────────────────────────────────────
+    # ------------------------- Sionna setup ------------------------------
     def _init_sionna(self):
-        # alias'ları kaydet (var‑olanı ezmez, yoksa ekler)
+        # extend material table
         for alias, base in ITU_ALIASES.items():
-            # Eğer alias yoksa doğrudan kopyala
             if alias not in _MATS:
                 _MATS[alias] = _MATS[base].copy()
             else:
-                # Alias mevcut ama aralık eksik → base'teki eksik frekansları ekle
                 for rng, props in _MATS[base].items():
-                    if rng not in _MATS[alias]:
-                        _MATS[alias][rng] = props
+                    _MATS[alias].setdefault(rng, props)
+
         self._sionna_scene = load_scene(str(self.cfg.sionna_scene_file))
-        self._sionna_scene.frequency = self.cfg.frequency
-        self._sionna_scene.bandwidth = 100e6
+        self._sionna_scene.frequency  = self.cfg.frequency
+        self._sionna_scene.bandwidth  = 100e6
         arr = PlanarArray(num_rows=1, num_cols=1, pattern="iso", polarization="V")
         self._sionna_scene.tx_array = arr
         self._sionna_scene.rx_array = arr
 
-        
-        # --- Burası ÖNEMLİ: N adet verici & alıcı ekle ---
-        self._tx_devices: list[Transmitter] = []
-        self._rx_devices: list[Receiver]    = []
+        self._tx = Transmitter("tx", [0,0,0], [0,0,0], power_dbm=self.cfg.tx_power_dbm)
+        self._sionna_scene.add(self._tx)
+
+        self._rx_devices: list[Receiver] = []
         for i in range(self.num_envs):
-            tx = Transmitter(f"tx{i}",
-                             position=[0,0,0],
-                             orientation=[0,0,0],
-                             power_dbm=self.cfg.tx_power_dbm)
-            rx = Receiver(f"rx{i}",
-                          position=[0,0,0],
-                          orientation=[0,0,0])
-            self._sionna_scene.add(tx)
+            rx = Receiver(f"rx{i}", [0,0,0], [0,0,0])
             self._sionna_scene.add(rx)
-            self._tx_devices.append(tx)
             self._rx_devices.append(rx)
 
         self._ps = PathSolver()
         self._ps.loop_mode = "symbolic"
 
-    # ───────────────────────────────────────────────────────
-    # Isaac Lab sahne kurulumu
-    # ───────────────────────────────────────────────────────
+    # --------------------- Isaac Lab scene build --------------------------
     def _setup_scene(self):
         super()._setup_scene()
-
         self._robot = Articulation(self.cfg.robot)
         self.scene.articulations["robot"] = self._robot
 
@@ -248,45 +224,35 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             self.cfg.terrain.env_spacing = self.scene.cfg.env_spacing
             self._terrain = self.cfg.terrain.class_type(self.cfg.terrain)
         else:
-            # USD devre dışı → düz zemin kabul edip env_origin’leri sıfırla
-            self._terrain = type(
-                "DummyTerrain",
-                (),
-                {"env_origins": torch.zeros(self.num_envs, 3, device=self.device)},
-            )()
-            
+            self._terrain = type("DummyTerrain", (), {"env_origins": torch.zeros(self.num_envs, 3, device=self.device)})()
+
         self.scene.clone_environments(copy_from_source=True)
         light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
-        light_cfg.func("/World/Light", light_cfg)
-        _try_set_viewport()
-
-    # ───────────────────────────────────────────────────────
-    # Aksiyonlar
-    # ───────────────────────────────────────────────────────
+        light_cfg.func("/World/Light", light_cfg) 
+    # --------------------------- actions ---------------------------------
     def _pre_physics_step(self, actions: torch.Tensor):
-        self._actions = actions.clone().clamp(-1.0, 1.0)
-        self._thrust[:, 0, 2] = self.cfg.thrust_to_weight * self._robot_weight * (self._actions[:, 0] + 1.0) / 2.0
+        self._actions = actions.clamp(-1.0, 1.0)
+        self._thrust[:, 0, 2] = self.cfg.thrust_to_weight * self._robot_weight * (self._actions[:,0]+1) / 2
         self._moment[:, 0, :] = self.cfg.moment_scale * self._actions[:, 1:]
+
+        # store trajectory point for viz
+        idx = self._traj_head
+        self._traj_buf[torch.arange(self.num_envs), idx] = self._robot.data.root_pos_w
+        self._traj_head = (idx + 1) % self.traj_len
 
     def _apply_action(self):
         self._robot.set_external_force_and_torque(self._thrust, self._moment, body_ids=self._body_id)
 
-    # ───────────────────────────────────────────────────────
-    # Gözlemler
-    # ───────────────────────────────────────────────────────
+    # ------------------------- observations ------------------------------
     def _get_observations(self):
         if self._rssi_counter % self.cfg.rssi_update_interval == 0:
-            # 1) Tüm Tx/Rx pozisyonlarını topluca CPU’ya al
-            tx_cpu = self._tx_pos_w.cpu().numpy()
-            rx_cpu = self._robot.data.root_pos_w[:, :3].cpu().numpy()
-
-            # 2) Her cihaza tek tek ata
-            for tx, p in zip(self._tx_devices, tx_cpu):
-                tx.position = p.tolist()
-            for rx, p in zip(self._rx_devices, rx_cpu):
+            # -- update TX & RX positions --------------------------------
+            self._tx.position = self._tx_pos_w[0].tolist()
+            rx_np = self._robot.data.root_pos_w[:, :3].cpu().numpy()
+            for rx, p in zip(self._rx_devices, rx_np):
                 rx.position = p.tolist()
 
-            # 3) Tek seferde tüm yolları hesaplat
+            # -- path solve ---------------------------------------------
             paths = self._ps(
                 scene=self._sionna_scene,
                 max_depth=self.cfg.max_depth,
@@ -299,42 +265,33 @@ class QuadcopterRSSIEnv(DirectRLEnv):
                 seed=0,
             )
 
-            # 4) Karmaşık kazanç katsayılarını Torch tensör olarak çek
-            a_torch, _ = paths.cir(normalize_delays=True, out_type="torch")
-            a_torch = a_torch.to(self.device)                           # [N_rx, N_tx, N_paths]
-            power   = (torch.abs(a_torch)**2).sum(dim=-1)               # [N_rx, N_tx]
-            gain    = torch.diagonal(power)                             # [N] — sadece (i,i) çiftleri
+            # complex amplitudes → power --------------------------------
+            a_t, _ = paths.cir(normalize_delays=True, out_type="torch")  # [E,1,1,1,P,1]
+            abs2 = torch.abs(a_t.to(self.device))**2
+            power_paths = abs2[:,0,0,0,:,:].sum((-2,-1))                 # [E]
 
-            # 5) FSPL garantisi için fallback
+            # free‑space fallback --------------------------------------
             rx_pos = self._robot.data.root_pos_w[:, :3]
-            d      = torch.linalg.norm(rx_pos - self._tx_pos_w, dim=1).clamp(min=1e-3)
-            lam    = 3e8 / self.cfg.frequency
-            fspl   = (lam / (4 * math.pi * d))**2
-            gain   = torch.maximum(gain, fspl)
+            d = torch.linalg.norm(rx_pos - self._tx_pos_w, dim=1).clamp_min(1e-3)
+            lam = 3e8 / self.cfg.frequency
+            fspl = (lam / (4*math.pi*d))**2
+            power = torch.maximum(power_paths, fspl)
 
-            # 6) dBm’e çevir & normalize et
-            prx_dbm = self.cfg.tx_power_dbm + 10.0 * torch.log10(gain)
+            prx_dbm = self.cfg.tx_power_dbm + 10 * torch.log10(power)
+            prx_dbm_cl = prx_dbm.clamp(self.cfg.rssi_min_dbm, self.cfg.rssi_max_dbm)
 
-            # 2) Episode log: yine [N] + [N]
-            print(prx_dbm.shape)
-            self._episode_sums["rssi_dbm"] += prx_dbm * self.step_dt
-
-            # 3) Clamp & normalize için [N]
-            prx_dbm_clamped = prx_dbm.clamp(self.cfg.rssi_min_dbm,
-                                            self.cfg.rssi_max_dbm)
-
-            # 4) rssi_buf oluştur: [N] → [N,1]
             scale = self.cfg.rssi_max_dbm - self.cfg.rssi_min_dbm
-            self._rssi_buf = (((prx_dbm_clamped - self.cfg.rssi_min_dbm)
-                            / scale) * 2.0 - 1.0).unsqueeze(1)
+            self._rssi_buf = (((prx_dbm_cl - self.cfg.rssi_min_dbm) / scale) * 2 - 1).unsqueeze(-1)
+            self._last_rssi = prx_dbm
 
         self._rssi_counter += 1
 
         desired_pos_b, _ = subtract_frame_transforms(
             self._robot.data.root_state_w[:, :3],
             self._robot.data.root_state_w[:, 3:7],
-            self._tx_pos_w,  # hedef = TX
+            self._tx_pos_w,
         )
+
         obs = torch.cat([
             self._robot.data.root_lin_vel_b,
             self._robot.data.root_ang_vel_b,
@@ -343,69 +300,57 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         ], dim=-1)
         return {"policy": obs}
 
-    # ───────────────────────────────────────────────────────
-    # Ödüller / bitiş
-    # ───────────────────────────────────────────────────────
+    # ---------------------------- rewards -------------------------------
     def _get_rewards(self):
-        lin_vel = torch.sum(self._robot.data.root_lin_vel_b ** 2, dim=1)
-        ang_vel = torch.sum(self._robot.data.root_ang_vel_b ** 2, dim=1)
-        distance_to_goal = torch.linalg.norm(self._tx_pos_w - self._robot.data.root_pos_w, dim=1)
-        distance_to_goal_mapped = 1 - torch.tanh(distance_to_goal / 0.8)
+        lin_vel = (self._robot.data.root_lin_vel_b**2).sum(1)
+        ang_vel = (self._robot.data.root_ang_vel_b**2).sum(1)
+        dist     = torch.linalg.norm(self._tx_pos_w - self._robot.data.root_pos_w, dim=1)
+        dist_map = 1 - torch.tanh(dist/0.8)
+        died = torch.logical_or(
+            self._robot.data.root_pos_w[:, 2] < 0.1, self._robot.data.root_pos_w[:, 2] > 2.0
+        )
+
         rewards = {
             "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * self.step_dt,
             "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * self.step_dt,
-            "distance_to_goal": distance_to_goal_mapped * self.cfg.distance_to_goal_reward_scale * self.step_dt,
+            "distance_to_goal": dist_map * self.cfg.distance_to_goal_reward_scale * self.step_dt,
+            "died": died * self.cfg.died_scale,
         }
-        reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
-        for k, v in rewards.items():
-            self._episode_sums[k] += v
-        return reward
+        reward_total = torch.sum(torch.stack(list(rewards.values())), dim=0)
 
+        # log episodic sums
+        for key, value in rewards.items():
+            self._episode_sums[key] += value
+        return reward_total
+
+    # ----------------------------- dones -------------------------------
     def _get_dones(self):
-        time_out = self.episode_length_buf >= self.max_episode_length - 1
-        died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.1, self._robot.data.root_pos_w[:, 2] > 2.0)
-        return died, time_out
+        timeout = self.episode_length_buf >= self.max_episode_length-1
+        died = torch.logical_or(self._robot.data.root_pos_w[:,2] < 0.1,
+                                self._robot.data.root_pos_w[:,2] > 2.0)
+        return died, timeout
 
-    # ───────────────────────────────────────────────────────
-    # Reset
-    # ───────────────────────────────────────────────────────
+    # ------------------------------ reset ------------------------------
     def _reset_idx(self, env_ids: Optional[torch.Tensor]):
         if env_ids is None or len(env_ids) == self.num_envs:
             env_ids = self._robot._ALL_INDICES
+        
+        self._traj_buf[env_ids] = 0.0
+        self._traj_head[env_ids] = 0
 
-        # Episode log hesaplamaları 
-        final_distance_to_goal = torch.linalg.norm(
-            self._desired_pos_w[env_ids] - self._robot.data.root_pos_w[env_ids], dim=1
-        ).mean()
+        # traj / episode stats
+        for k in self._episode_sums.keys():
+            self._episode_sums[k][env_ids] = 0.0
 
-        extras: dict[str, float] = {}
-        for key in self._episode_sums.keys():
-            episodic_sum_avg = torch.mean(self._episode_sums[key][env_ids])
-            extras[f"Episode_Reward/{key}"] = (episodic_sum_avg / self.max_episode_length_s).item()
-            # sıfırla
-            self._episode_sums[key][env_ids] = 0.0
+        # new common target position
+        pos = torch.zeros(3, device=self.device)
+        pos[:2] = torch.rand(2, device=self.device)*4 - 2
+        pos[2]  = torch.rand(1, device=self.device)*1 + 0.5
+        self._tx.position = pos.tolist()
+        self._tx_pos_w[:] = pos
+        self._desired_pos_w[:] = pos
 
-        extras["Episode_Termination/died"] = int(torch.count_nonzero(self.reset_terminated[env_ids]))
-        extras["Episode_Termination/time_out"] = int(torch.count_nonzero(self.reset_time_outs[env_ids]))
-        extras["Metrics/final_distance_to_goal"] = final_distance_to_goal.item()
-
-        self.extras["log"] = extras
-
-        # Isaac Lab reset
-        self._robot.reset(env_ids)
-        super()._reset_idx(env_ids)
-        if len(env_ids) == self.num_envs:
-            self.episode_length_buf = torch.randint_like(self.episode_length_buf, high=int(self.max_episode_length))
-        self._actions[env_ids] = 0.0
-
-        # ─── Yeni TX & hedef pozisyonu ───
-        self._tx_pos_w[env_ids, :2] = torch.zeros_like(self._tx_pos_w[env_ids, :2]).uniform_(-2.0, 2.0)
-        self._tx_pos_w[env_ids, :2] += self._terrain.env_origins[env_ids, :2]
-        self._tx_pos_w[env_ids, 2] = torch.zeros_like(self._tx_pos_w[env_ids, 2]).uniform_(0.5, 1.5)
-        # Robotun izleyeceği hedef de aynı olsun
-        self._desired_pos_w[env_ids] = self._tx_pos_w[env_ids]
-
-        # Robot state (başlangıç)
+        # robot default state
         jp = self._robot.data.default_joint_pos[env_ids]
         jv = self._robot.data.default_joint_vel[env_ids]
         root = self._robot.data.default_root_state[env_ids]
@@ -414,33 +359,64 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         self._robot.write_root_velocity_to_sim(root[:, 7:], env_ids)
         self._robot.write_joint_state_to_sim(jp, jv, None, env_ids)
 
-    # ───────────────────────────────────────────────────────
-    # Debug viz
-    # ───────────────────────────────────────────────────────
+        super()._reset_idx(env_ids)
+        if len(env_ids) == self.num_envs:
+            self.episode_length_buf = torch.randint_like(self.episode_length_buf, high=int(self.max_episode_length))
+
     def _set_debug_vis_impl(self, debug_vis: bool):
         if debug_vis:
+            self._window.set_visibility(True)
+            self.traj_vis.set_visibility(True)
+
+            # create concentric goal spheres once -----------------
             if not hasattr(self, "goal_pos_visualizer"):
-                cfg = CUBOID_MARKER_CFG.copy()
-                cfg.markers["cuboid"].size = (0.05, 0.05, 0.05)
-                cfg.prim_path = "/Visuals/Command/goal_position"
-                self.goal_pos_visualizer = VisualizationMarkers(cfg)
-            self.goal_pos_visualizer.set_visibility(True)
+                layers, min_r, max_r = 12, 0.01, 0.1
+                min_opa, color = 0.001, (1.0, 0.0, 0.0)
+                self.goal_pos_visualizer: list[VisualizationMarkers] = []
+                for i in range(layers):
+                    t = i / (layers - 1) if layers > 1 else 0.0
+                    r = min_r + (max_r - min_r) * t
+                    op = 1.0 - (1.0 - min_opa) * t
+                    vis = make_single_sphere_vis(
+                        radius=r,
+                        color=color,
+                        opacity=op,
+                        prim_path=f"/Visuals/GoalSphere/layer_{i}",
+                    )
+                    self.goal_pos_visualizer.append(vis)
+            for vis in self.goal_pos_visualizer:
+                vis.set_visibility(True)
         else:
+            self._window.set_visibility(False)
+            self.traj_vis.set_visibility(False)
             if hasattr(self, "goal_pos_visualizer"):
-                self.goal_pos_visualizer.set_visibility(False)
+                for vis in self.goal_pos_visualizer:
+                    vis.set_visibility(False)
 
-    def _debug_vis_callback(self, _event):
-        self.goal_pos_visualizer.visualize(self._tx_pos_w)
+    # -------------------------------------------------------------
 
+    def _debug_vis_callback(self, event):
+        # goal marker update
+        for vis in self.goal_pos_visualizer:
+            vis.visualize(self._desired_pos_w)
 
-# ───────────────────────── main test ─────────────────────────
+        # breadcrumb trajectory
+        all_pts = self._traj_buf.reshape(-1, 3)
+        self.traj_vis.visualize(all_pts)
+
+        # live RSSI in window (if present)
+        val = self._last_rssi[0].item() if self._last_rssi.numel() > 1 else self._last_rssi.item()
+        if hasattr(self, "_window") and self._window is not None:
+            self._window.set_rssi(val)
+
+# ------------------------------ standalone test ------------------------------
 if __name__ == "__main__":
     cfg = QuadcopterRSSIEnvCfg()
     env = QuadcopterRSSIEnv(cfg, render_mode="human")
     obs, _ = env.reset()
     done = False
     while not done:
-        act = env.single_action_space.sample() * 0
+        act = torch.zeros(env.single_action_space.shape, device=env.device)
         obs, _, term, trunc, _ = env.step(act)
         done = bool(term or trunc)
     env.close()
