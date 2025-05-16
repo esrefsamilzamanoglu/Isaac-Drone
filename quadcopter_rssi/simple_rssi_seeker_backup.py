@@ -13,54 +13,13 @@ from isaaclab.sim import SimulationCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.math import subtract_frame_transforms
-from isaaclab.envs.ui.viewport_camera_controller import ViewportCameraController  # kamera controller
-from isaaclab.envs import ViewerCfg                                     # config sınıfı
 
 ##
 # Pre-defined configs
 ##
 from isaaclab_assets import CRAZYFLIE_CFG  # isort: skip
-from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
-from isaaclab.sim import SphereCfg, PreviewSurfaceCfg, RenderCfg
+from isaaclab.markers import CUBOID_MARKER_CFG  # isort: skip
 
-from pxr import Gf       
-import omni.ui as ui 
-import omni.kit.viewport.utility as vp_util
-
-
-def make_single_sphere_vis(radius: float,
-                           color  =(1.0,0.0,0.0),
-                           opacity=0.3,
-                           prim_path="/Visuals/GoalSphere") -> VisualizationMarkers:
-    cfg = VisualizationMarkersCfg(
-        prim_path = prim_path,
-        markers   = {
-            "sphere": SphereCfg(
-                radius=radius,
-                visual_material=PreviewSurfaceCfg(
-                    diffuse_color=color,
-                    opacity=opacity
-                )
-            )
-        }
-    )
-    return VisualizationMarkers(cfg)
-
-def make_traj_point_vis(
-    max_points: int,
-    radius: float = 0.003,
-    color: tuple[float, float, float] = (0.0, 1.0, 0.0),
-    prim_path: str = "/Visuals/TrajPoints",
-) -> VisualizationMarkers:
-    markers = {
-        f"pt_{i:04d}": SphereCfg(
-            radius=radius,
-            visual_material=PreviewSurfaceCfg(diffuse_color=color, opacity=1.0),
-        )
-        for i in range(max_points)
-    }
-    cfg = VisualizationMarkersCfg(prim_path=prim_path, markers=markers)
-    return VisualizationMarkers(cfg)
 
 class QuadcopterEnvWindow(BaseEnvWindow):
     """Window manager for the Quadcopter environment."""
@@ -74,34 +33,18 @@ class QuadcopterEnvWindow(BaseEnvWindow):
         """
         # initialize base window
         super().__init__(env, window_name)
-
-        viewer_cfg = ViewerCfg(
-            eye=(1.5, 1.5, 1.5),            # kamera pozisyonu
-            lookat=(0.0, 0.0, 0.0),         # bakılan nokta
-            cam_prim_path="/OmniverseKit_Persp",  # default kamera prim
-            resolution=(1280, 720),         # pencere çözünürlüğü
-            origin_type="asset_root",              # “world” | “env” | “asset_root” | “asset_body”
-            env_index=0,                    # hangi ortamı takip edecek
-            asset_name="robot",             # asset_root takibi için robot kök adı
-            body_name=None                  # asset_body takibi yok
-        )
-        # ❸ Controller’ı oluşturun:
-        self.camera_ctrl = ViewportCameraController(self.env, viewer_cfg)
-
         # add custom UI elements
         with self.ui_window_elements["main_vstack"]:
             with self.ui_window_elements["debug_frame"]:
                 with self.ui_window_elements["debug_vstack"]:
                     # add command manager visualization
                     self._create_debug_vis_ui_element("targets", self.env)
-                    
-
 
 
 @configclass
 class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     # env
-    episode_length_s = 15.0
+    episode_length_s = 10.0
     decimation = 2
     action_space = 4
     state_space = 0
@@ -126,9 +69,6 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
             dynamic_friction=1.0,
             restitution=0.0,
         ),
-        render = RenderCfg(
-            enable_translucency = True,
-        ),
     )
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
@@ -136,7 +76,6 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
         collision_group=-1,
         debug_vis=False,
     )
-    
 
     # scene
     scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=True)
@@ -150,30 +89,14 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     lin_vel_reward_scale = -0.05
     ang_vel_reward_scale = -0.01
     distance_to_goal_reward_scale = 50.0
+    found_goal_scale = 0.0
     died_scale = -1.0
 
 class QuadcopterRSSIEnv(DirectRLEnv):
     cfg: QuadcopterRSSIEnvCfg
 
-    
     def __init__(self, cfg: QuadcopterRSSIEnvCfg, render_mode: str | None = None, **kwargs):
         super().__init__(cfg, render_mode, **kwargs)
-        
-        self.traj_len = 200
-        self._traj_buf = torch.zeros((self.num_envs, self.traj_len, 3), device=self.device)
-        self._traj_head = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
-        self.traj_vis = make_traj_point_vis(self.traj_len)  
-
-        self._vp_window = vp_util.get_active_viewport_window()
-        with self._vp_window.get_frame("Overlay"):
-            self._rssi_label = ui.Label(
-                "-150 dBm",
-                alignment = ui.Alignment.CENTER,
-                size      = 18,
-                style     = {"color": 0xffffffff},
-            )
-
-        self._last_rssi = torch.zeros(self.num_envs, device=self.device)
 
         # Total thrust and moment applied to the base of the quadcopter
         self._actions = torch.zeros(self.num_envs, gym.spaces.flatdim(self.single_action_space), device=self.device)
@@ -189,6 +112,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
                 "lin_vel",
                 "ang_vel",
                 "distance_to_goal",
+                "found_goal",
                 "died"
             ]
         }
@@ -218,9 +142,6 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         self._actions = actions.clone().clamp(-1.0, 1.0)
         self._thrust[:, 0, 2] = self.cfg.thrust_to_weight * self._robot_weight * (self._actions[:, 0] + 1.0) / 2.0
         self._moment[:, 0, :] = self.cfg.moment_scale * self._actions[:, 1:]
-        idx = self._traj_head
-        self._traj_buf[torch.arange(self.num_envs), idx] = self._robot.data.root_pos_w
-        self._traj_head = (idx + 1) % self.traj_len
 
     def _apply_action(self):
         self._robot.set_external_force_and_torque(self._thrust, self._moment, body_ids=self._body_id)
@@ -252,7 +173,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             ],
             dim=-1,
         )
-        self._last_rssi = rssi_dbm.flatten()
+        #print(f"{dist[0]}m, {rssi_dbm[0]}dBm, {rssi[0]}")
         return {"policy": obs}
 
 
@@ -261,12 +182,14 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         lin_vel = torch.sum(torch.square(self._robot.data.root_lin_vel_b), dim=1)
         ang_vel = torch.sum(torch.square(self._robot.data.root_ang_vel_b), dim=1)
         distance_to_goal = torch.linalg.norm(self._desired_pos_w - self._robot.data.root_pos_w, dim=1)
+        found_goal = (distance_to_goal < 0.01).float()  # 1 cm içinde hedef sayılıyor
         distance_to_goal_mapped = 1 - torch.tanh(distance_to_goal / 0.8)
         died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.1, self._robot.data.root_pos_w[:, 2] > 2.0)
         rewards = {
             "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * self.step_dt,
             "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * self.step_dt,
             "distance_to_goal": distance_to_goal_mapped * self.cfg.distance_to_goal_reward_scale * self.step_dt,
+            "found_goal": found_goal * self.cfg.found_goal_scale * self.step_dt,
             "died": died * self.cfg.died_scale
         }
         reward = torch.sum(torch.stack(list(rewards.values())), dim=0)
@@ -285,9 +208,6 @@ class QuadcopterRSSIEnv(DirectRLEnv):
     def _reset_idx(self, env_ids: torch.Tensor | None):
         if env_ids is None or len(env_ids) == self.num_envs:
             env_ids = self._robot._ALL_INDICES
-
-        self._traj_buf[env_ids] = 0.0
-        self._traj_head[env_ids] = 0
 
         # Logging
         final_distance_to_goal = torch.linalg.norm(
@@ -327,45 +247,20 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         self._robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
 
     def _set_debug_vis_impl(self, debug_vis: bool):
-        """Env bazlı debug görselleştirme (hedef işaretçisi)."""
+        # create markers if necessary for the first tome
         if debug_vis:
-            self._rssi_label.visible = True
-            self.traj_vis.set_visibility(True)
-            if not hasattr(self, "goal_pos_visualizer"):   # << isim KORUNDU
-                # Parametrik katmanlar
-                LAYERS        = 12
-                MIN_R, MAX_R  = 0.01, 0.02
-                MIN_OPA       = 0.5
-                color         = (1.0, 0.0, 0.0)
-
-                self.goal_pos_visualizer: list[VisualizationMarkers] = []
-                for i in range(LAYERS):
-                    t  = i/(LAYERS-1) if LAYERS>1 else 0.0
-                    r  = MIN_R + (MAX_R-MIN_R)*t
-                    op = 1.0 - (1.0-MIN_OPA)*t
-                    vis = make_single_sphere_vis(
-                            radius=r,
-                            color=color,
-                            opacity=op,
-                            prim_path=f"/Visuals/GoalSphere/layer_{i}"
-                          )
-                    self.goal_pos_visualizer.append(vis)
-            # Görünür yap
-            for vis in self.goal_pos_visualizer:
-                vis.set_visibility(True)
+            if not hasattr(self, "goal_pos_visualizer"):
+                marker_cfg = CUBOID_MARKER_CFG.copy()
+                marker_cfg.markers["cuboid"].size = (0.05, 0.05, 0.05)
+                # -- goal pose
+                marker_cfg.prim_path = "/Visuals/Command/goal_position"
+                self.goal_pos_visualizer = VisualizationMarkers(marker_cfg)
+            # set their visibility to true
+            self.goal_pos_visualizer.set_visibility(True)
         else:
-            self._rssi_label.visible = False
-            self.traj_vis.set_visibility(False)
             if hasattr(self, "goal_pos_visualizer"):
-                for vis in self.goal_pos_visualizer:
-                    vis.set_visibility(False)
+                self.goal_pos_visualizer.set_visibility(False)
 
     def _debug_vis_callback(self, event):
         # update the markers
-        for vis in self.goal_pos_visualizer: vis.visualize(self._desired_pos_w) 
-
-        all_pts = self._traj_buf.reshape(-1, 3)   # (num_envs*TRAJ_LEN, 3)
-        self.traj_vis.visualize(all_pts)
-
-        val = self._last_rssi[0].item() if self._last_rssi.numel() > 1 else self._last_rssi.item()
-        self._rssi_label.text = f"{val:.1f} dBm"
+        self.goal_pos_visualizer.visualize(self._desired_pos_w)

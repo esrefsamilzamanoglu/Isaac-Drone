@@ -99,6 +99,7 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     ang_vel_reward_scale: float = -0.01
     distance_to_goal_reward_scale: float = 50.0
     died_scale: float = -1.0
+    found_goal_scale: float = 0.0
 
 
 # =================================================================
@@ -147,6 +148,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
                 "lin_vel",
                 "ang_vel",
                 "distance_to_goal",
+                "found_goal",
                 "died",
             ]
         }
@@ -239,11 +241,13 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         ang_vel = torch.sum(torch.square(self._robot.data.root_ang_vel_b), dim=1)
         distance_to_goal = torch.linalg.norm(self._desired_pos_w - self._robot.data.root_pos_w, dim=1)
         distance_to_goal_mapped = 1 - torch.tanh(distance_to_goal / 0.8)
+        found_goal = (distance_to_goal < 0.01).float()
         died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.1, self._robot.data.root_pos_w[:, 2] > 2.0)
         rewards = {
             "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * self.step_dt,
             "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * self.step_dt,
             "distance_to_goal": distance_to_goal_mapped * self.cfg.distance_to_goal_reward_scale * self.step_dt,
+            "found_goal": found_goal * self.cfg.found_goal_scale * self.step_dt,
             "died": died * self.cfg.died_scale
         }
         reward_total = torch.sum(torch.stack(list(rewards.values())), dim=0)
@@ -299,7 +303,6 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         super()._reset_idx(env_ids)
 
         if len(env_ids) == self.num_envs:
-            # jitter/reset offset to avoid sync spikes
             self.episode_length_buf = torch.randint_like(self.episode_length_buf, high=int(self.max_episode_length))
 
         self._actions[env_ids] = 0.0
@@ -319,11 +322,18 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         self._robot.write_root_velocity_to_sim(root_state[:, 7:], env_ids)
         self._robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
 
+        super()._reset_idx(env_ids)
+        if len(env_ids) == self.num_envs:
+            self.episode_length_buf = torch.randint_like(self.episode_length_buf, high=int(self.max_episode_length))
+
     # -----------------------------------------------------------------
     # Debug visualisation hooks
     # -----------------------------------------------------------------
 
     def _set_debug_vis_impl(self, debug_vis: bool):
+        # only proceed if a UI window exists
+        if not getattr(self, "_window", None):
+            return
         if debug_vis:
             self._window.set_visibility(True)
             self.traj_vis.set_visibility(True)
@@ -357,6 +367,9 @@ class QuadcopterRSSIEnv(DirectRLEnv):
 
     def _debug_vis_callback(self, event):
         # goal marker update
+        if not getattr(self, "_window", None):
+            return
+        
         for vis in self.goal_pos_visualizer:
             vis.visualize(self._desired_pos_w)
 

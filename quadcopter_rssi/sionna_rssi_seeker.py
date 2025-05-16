@@ -338,9 +338,24 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         self._traj_buf[env_ids] = 0.0
         self._traj_head[env_ids] = 0
 
-        # traj / episode stats
-        for k in self._episode_sums.keys():
-            self._episode_sums[k][env_ids] = 0.0
+        final_dist = torch.linalg.norm(
+            self._desired_pos_w[env_ids] - self._robot.data.root_pos_w[env_ids], dim=1
+        ).mean()
+
+        extras: dict[str, Any] = {}
+        for key in self._episode_sums.keys():
+            episodic_avg = torch.mean(self._episode_sums[key][env_ids])
+            extras[f"Episode_Reward/{key}"] = episodic_avg / self.max_episode_length_s
+            self._episode_sums[key][env_ids] = 0.0
+
+        extras.update(
+            {
+                "Episode_Termination/died": torch.count_nonzero(self.reset_terminated[env_ids]).item(),
+                "Episode_Termination/time_out": torch.count_nonzero(self.reset_time_outs[env_ids]).item(),
+                "Metrics/final_distance_to_goal": final_dist.item(),
+            }
+        )
+        self.extras["log"] = extras
 
         # new common target position
         pos = torch.zeros(3, device=self.device)
@@ -364,6 +379,8 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             self.episode_length_buf = torch.randint_like(self.episode_length_buf, high=int(self.max_episode_length))
 
     def _set_debug_vis_impl(self, debug_vis: bool):
+        if not getattr(self, "_window", None):
+            return
         if debug_vis:
             self._window.set_visibility(True)
             self.traj_vis.set_visibility(True)
@@ -396,6 +413,8 @@ class QuadcopterRSSIEnv(DirectRLEnv):
     # -------------------------------------------------------------
 
     def _debug_vis_callback(self, event):
+        if not getattr(self, "_window", None):
+            return
         # goal marker update
         for vis in self.goal_pos_visualizer:
             vis.visualize(self._desired_pos_w)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Shared visualization helpers for Quadcopter‑RSSI demos.
+"""Shared visualization helpers for Quadcopter-RSSI demos.
 
 Everything that is *only* needed for visual feedback lives here so that the
 main environment file focuses on physics + RL logic.
@@ -15,14 +15,24 @@ script) before importing.
 
 from typing import TYPE_CHECKING
 
-import omni.ui as ui
-import omni.kit.viewport.utility as vp_util
+# -----------------------------------------------------------------------------
+# Guard Omni UI imports for headless compatibility
+# -----------------------------------------------------------------------------
+try:
+    import omni.ui as ui
+    import omni.kit.viewport.utility as vp_util
+    UI_AVAILABLE = True
+except ImportError:
+    UI_AVAILABLE = False
 
-from isaaclab.envs.ui import BaseEnvWindow
+from isaaclab.envs.ui import BaseEnvWindow  # safe even if headless
 from isaaclab.envs import ViewerCfg          
 from isaaclab.envs.ui.viewport_camera_controller import ViewportCameraController
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.sim import SphereCfg, PreviewSurfaceCfg
+
+if TYPE_CHECKING:  # avoid circular import at runtime
+    from quadcopter_env import QuadcopterRSSIEnv  # adjust to your actual module name
 
 # -----------------------------------------------------------------------------
 # Helper factory functions
@@ -30,23 +40,11 @@ from isaaclab.sim import SphereCfg, PreviewSurfaceCfg
 
 def make_single_sphere_vis(
     radius: float,
-    color: tuple[float, float, float] = (1.0, 0.0, 0.0),
+    color: tuple[float, float, float] = (1.0, 0.0, 1.0),
     opacity: float = 0.3,
     prim_path: str = "/Visuals/GoalSphere",
 ) -> VisualizationMarkers:
-    """Create a single semi‑transparent sphere marker.
-
-    Parameters
-    ----------
-    radius : float
-        Sphere radius in *scene units*.
-    color : tuple
-        RGB triple in the range [0, 1]. Default is red.
-    opacity : float, optional
-        Alpha channel (0 → transparent, 1 → opaque), by default 0.3.
-    prim_path : str, optional
-        USD prim path under which the marker will be spawned.
-    """
+    """Create a single semi-transparent sphere marker."""
     cfg = VisualizationMarkersCfg(
         prim_path=prim_path,
         markers={
@@ -68,7 +66,7 @@ def make_traj_point_vis(
     color: tuple[float, float, float] = (0.0, 1.0, 0.0),
     prim_path: str = "/Visuals/TrajPoints",
 ) -> VisualizationMarkers:
-    """Pre‑allocate a pool of sphere markers for trajectory breadcrumbs."""
+    """Pre-allocate a pool of sphere markers for trajectory breadcrumbs."""
     markers = {
         f"pt_{i:04d}": SphereCfg(
             radius=radius,
@@ -83,55 +81,56 @@ def make_traj_point_vis(
 # Custom viewport window
 # -----------------------------------------------------------------------------
 
-if TYPE_CHECKING:  # avoid circular import at runtime
-    from quadcopter_env import QuadcopterRSSIEnv  # adjust to your actual module name
+if UI_AVAILABLE:
+    class QuadcopterEnvWindow(BaseEnvWindow):
+        """Lightweight UI/window wrapper for *QuadcopterRSSIEnv*."""
 
+        def __init__(self, env: "QuadcopterRSSIEnv", window_name: str = "IsaacLab"):
+            super().__init__(env, window_name)
 
-class QuadcopterEnvWindow(BaseEnvWindow):
-    """Lightweight UI/window wrapper for *QuadcopterRSSIEnv*.
-
-    This class centralises all Omniverse‑UI code. Nothing here is required for
-    the RL loop itself – remove it from *production* or *headless* runs to save
-    resources.
-    """
-
-    def __init__(self, env: "QuadcopterRSSIEnv", window_name: str = "IsaacLab"):
-        super().__init__(env, window_name)
-
-        # ------------------ camera ------------------
-        viewer_cfg = ViewerCfg(
-            eye=(1.5, 1.5, 1.5),
-            lookat=(0.0, 0.0, 0.0),
-            cam_prim_path="/OmniverseKit_Persp",
-            resolution=(1280, 720),
-            origin_type="asset_root",
-            env_index=0,
-            asset_name="robot",
-            body_name=None,
-        )
-        self.camera_ctrl = ViewportCameraController(self.env, viewer_cfg)
-
-        # ------------------- UI ---------------------
-        with self.ui_window_elements["main_vstack"]:
-            with self.ui_window_elements["debug_frame"]:
-                with self.ui_window_elements["debug_vstack"]:
-                    self._create_debug_vis_ui_element("targets", self.env)
-
-        # live RSSI read‑out in the top‑left corner
-        self._vp_window = vp_util.get_active_viewport_window()
-        with self._vp_window.get_frame("Overlay"):
-            self._rssi_label = ui.Label(
-                "-150 dBm",
-                alignment=ui.Alignment.CENTER,
-                size=18,
-                style={"color": 0xFFFFFFFF},
+            # ------------------ camera ------------------
+            viewer_cfg = ViewerCfg(
+                eye=(1.5, 1.5, 1.5),
+                lookat=(0.0, 0.0, 0.0),
+                cam_prim_path="/OmniverseKit_Persp",
+                resolution=(1280, 720),
+                origin_type="asset_root",
+                env_index=0,
+                asset_name="robot",
+                body_name=None,
             )
+            self.camera_ctrl = ViewportCameraController(self.env, viewer_cfg)
 
-    # ---------------------------------------------------------------------
-    # public helper – call this from the env to update text live
-    # ---------------------------------------------------------------------
-    def set_rssi(self, value_dbm: float):
-        self._rssi_label.text = f"{value_dbm:.1f} dBm"
-        
-    def set_visibility(self, vis):
-        self._rssi_label.visible = vis
+            # ------------------- UI ---------------------
+            with self.ui_window_elements["main_vstack"]:
+                with self.ui_window_elements["debug_frame"]:
+                    with self.ui_window_elements["debug_vstack"]:
+                        self._create_debug_vis_ui_element("targets", self.env)
+
+            # live RSSI read-out in the top-left corner
+            self._vp_window = vp_util.get_active_viewport_window()
+            with self._vp_window.get_frame("Overlay"):
+                self._rssi_label = ui.Label(
+                    f"{env.cfg.rssi_min_dbm:.1f} dBm",
+                    alignment=ui.Alignment.CENTER,
+                    size=18,
+                    style={"color": 0xFFFFFFFF},
+                )
+
+        def set_rssi(self, value_dbm: float):
+            """Update RSSI text in UI."""
+            self._rssi_label.text = f"{value_dbm:.1f} dBm"
+
+        def set_visibility(self, vis: bool):
+            """Show or hide the RSSI overlay label."""
+            self._rssi_label.visible = bool(vis)
+
+else:
+    # Headless stub class
+    class QuadcopterEnvWindow:
+        def __init__(self, *args, **kwargs):
+            pass
+        def set_rssi(self, value_dbm: float):
+            pass
+        def set_visibility(self, vis: bool):
+            pass
