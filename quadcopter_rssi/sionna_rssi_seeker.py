@@ -236,7 +236,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             self._terrain = type("DummyTerrain", (), {"env_origins": torch.zeros(self.num_envs, 3, device=self.device)})()
 
         self.scene.clone_environments(copy_from_source=True)
-        light_cfg = sim_utils.DomeLightCfg(intensity=20000.0, color=(0.75, 0.75, 0.75))
+        light_cfg = sim_utils.DomeLightCfg(intensity=8000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg) 
     # --------------------------- actions ---------------------------------
     def _pre_physics_step(self, actions: torch.Tensor):
@@ -417,8 +417,8 @@ class QuadcopterRSSIEnv(DirectRLEnv):
 
             # create concentric goal spheres once -----------------
             if not hasattr(self, "goal_pos_visualizer"):
-                layers, min_r, max_r = 1, 0.07, 0.07
-                min_opa, color = 1, (1.0, 0.0, 0.0)
+                layers, min_r, max_r = 5, 0.02, 0.07
+                min_opa, color = 0.1, (1.0, 0.0, 0.0)
                 self.goal_pos_visualizer: list[VisualizationMarkers] = []
                 for i in range(layers):
                     t = i / (layers - 1) if layers > 1 else 0.0

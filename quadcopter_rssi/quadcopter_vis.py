@@ -41,7 +41,7 @@ if TYPE_CHECKING:  # avoid circular import at runtime
 def make_single_sphere_vis(
     radius: float,
     color: tuple[float, float, float] = (1.0, 0.0, 0.0),
-    opacity: float = 0.3,
+    opacity: float = 0.2,
     prim_path: str = "/Visuals/GoalSphere",
 ) -> VisualizationMarkers:
     """Create a single semi-transparent sphere marker."""
@@ -70,7 +70,7 @@ def make_traj_point_vis(
     markers = {
         f"pt_{i:04d}": SphereCfg(
             radius=radius,
-            visual_material=PreviewSurfaceCfg(diffuse_color=color, opacity=0.3),
+            visual_material=PreviewSurfaceCfg(diffuse_color=color, opacity=1),
         )
         for i in range(max_points)
     }
