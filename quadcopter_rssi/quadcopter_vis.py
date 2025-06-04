@@ -29,7 +29,7 @@ from isaaclab.envs.ui import BaseEnvWindow  # safe even if headless
 from isaaclab.envs import ViewerCfg          
 from isaaclab.envs.ui.viewport_camera_controller import ViewportCameraController
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
-from isaaclab.markers import PolylineCfg as LineStripCfg
+
 from isaaclab.sim import SphereCfg, PreviewSurfaceCfg
 
 if TYPE_CHECKING:  # avoid circular import at runtime
@@ -38,31 +38,29 @@ if TYPE_CHECKING:  # avoid circular import at runtime
 # -----------------------------------------------------------------------------
 # Helper factory functions
 # -----------------------------------------------------------------------------
+import torch
+from omni.isaac.debug_draw import _debug_draw
+from pxr import Gf
+
+_draw = _debug_draw.acquire_debug_draw_interface()
+
+def draw_rf_paths_debug(paths_per_env: list[list[torch.Tensor]],
+                        env_origin: torch.Tensor = torch.zeros(3)):
+    """paths_per_env: env-bazında, her biri (N_i, 3) torch.tensor vertex listesi"""
+    _draw.clear_lines()                           # eski çizgileri sil
+    for path in paths_per_env:
+        for verts in path:
+            # torch → tuple list
+            pts = [(float(p[0]+env_origin[0]),
+                    float(p[1]+env_origin[1]),
+                    float(p[2]+env_origin[2])) for p in verts]
+
+            if len(pts) >= 2:
+                _draw.draw_lines(pts[:-1], pts[1:],
+                                 [(0.2,0.8,1.0,1)]* (len(pts)-1),  # renk RGBA
+                                 [2]* (len(pts)-1))                 # kalınlık px
 
 
-def make_rf_path_vis(
-    max_paths: int,
-    max_segments: int,
-    color: tuple[float, float, float] = (0.2, 0.8, 1.0),
-    thickness: float = 0.003,
-    prim_path: str = "/Visuals/RFPaths",
-) -> VisualizationMarkers:
-    """
-    Çok-yollu (multipath) RF ışınlarını çizmek için line-strip marker’ları oluşturur.
-    * ``max_paths``        : Aynı anda göstereceğin toplam yol (ışın) sayısı
-    * ``max_segments``     : Bir yolda olabilecek max kırılım + 1 (TX-RX arası düğüm sayısı-1)
-    * ``color`` / ``thickness`` : Görsel ayarlar
-    """
-    markers = {
-        f"path_{i}": LineStripCfg(
-            thickness=thickness,
-            color=color,
-            max_num_points=max_segments + 1,  #   ►  n düğüm  ==  n-1 çizgi
-        )
-        for i in range(max_paths)
-    }
-    cfg = VisualizationMarkersCfg(prim_path=prim_path, markers=markers, replicate=False)
-    return VisualizationMarkers(cfg)
 
 def make_single_sphere_vis(
     radius: float,

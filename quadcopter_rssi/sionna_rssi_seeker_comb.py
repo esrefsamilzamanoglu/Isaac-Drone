@@ -39,7 +39,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from quadcopter_vis import (
     make_single_sphere_vis,
     make_traj_point_vis,
-    make_rf_path_vis,
+    draw_rf_paths_debug,
     QuadcopterEnvWindow,
 )
 # -----------------------------------------------------------------------------
@@ -192,10 +192,6 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         self._init_sionna()
 
         self.set_debug_vis(self.cfg.debug_vis)
-        self.path_vis = make_rf_path_vis(
-            max_paths=self.cfg.samples_per_tx,
-            max_segments=self.cfg.max_depth + 1,
-        )
         self._rf_paths: list[list[torch.Tensor]] = [[] for _ in range(self.num_envs)]
 
 
@@ -287,12 +283,11 @@ class QuadcopterRSSIEnv(DirectRLEnv):
                     seed=i,
                 )
                 path_list = []
-                for p in paths.paths:                    # Sionna ≥ 1.0 – her Path objesi
+                for p in paths.paths:                       # Sionna ≤0.19 & ≥1.0 uyumlu
                     verts = torch.tensor(p.vertices, device=self.device, dtype=torch.float32)
-                    # Ortam orijinini ekle, böylece world-space koordinatları olur
-                    verts += self._env_origins[i]
                     path_list.append(verts)
-                self._rf_paths[i] = path_list  
+                self._rf_paths[i] = path_list               # env-bazında sakla
+                
                 a_t, _ = paths.cir(normalize_delays=True, out_type="torch")
                 abs2 = torch.abs(a_t.to(self.device))**2
                 power_paths = abs2[0,0,0,:,:].sum()
@@ -480,10 +475,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         if hasattr(self, "_window") and self._window is not None:
             self._window.set_rssi(val)
         
-        vis_dict = {}
-        for p_idx, verts in enumerate(self._rf_paths[0]):     # ilk env ekranda
-            vis_dict[f"path_{p_idx}"] = verts
-        self.path_vis.visualize(vis_dict)
+        draw_rf_paths_debug(self._rf_paths[0])
 
 # ------------------------------ standalone test ------------------------------
 if __name__ == "__main__":
