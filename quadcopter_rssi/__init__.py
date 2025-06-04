@@ -16,7 +16,7 @@ gym.register(
 
 gym.register(
     id="Isaac-Drone-Sionna-RSSI-Seeker",
-    entry_point=f"{__name__}.sionna_rssi_seeker:QuadcopterRSSIEnv",       
+    entry_point=f"{__name__}.sionna_rssi_seeker_comb:QuadcopterRSSIEnv",       
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.sionna_rssi_seeker_comb:QuadcopterRSSIEnvCfg",  
