@@ -95,7 +95,7 @@ if UI_AVAILABLE:
                 eye=(0, 2, 1),
                 lookat=(0.0, 0.0, 0.0),
                 cam_prim_path="/OmniverseKit_Persp",
-                resolution=(1280, 720),
+                resolution=(3840, 2160),
                 origin_type="asset_root",
                 env_index=0,
                 asset_name="robot",
