@@ -28,7 +28,8 @@ except ImportError:
 from isaaclab.envs.ui import BaseEnvWindow  # safe even if headless
 from isaaclab.envs import ViewerCfg          
 from isaaclab.envs.ui.viewport_camera_controller import ViewportCameraController
-from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg, LineStripCfg
+from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
+from isaaclab.markers import PolylineCfg as LineStripCfg
 from isaaclab.sim import SphereCfg, PreviewSurfaceCfg
 
 if TYPE_CHECKING:  # avoid circular import at runtime
