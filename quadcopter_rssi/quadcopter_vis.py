@@ -90,7 +90,7 @@ if UI_AVAILABLE:
 
             # ------------------ camera ------------------
             viewer_cfg = ViewerCfg(
-                eye=(1, 0, 1),
+                eye=(0, 1, 1),
                 lookat=(0.0, 0.0, 0.0),
                 cam_prim_path="/OmniverseKit_Persp",
                 resolution=(1280, 720),
