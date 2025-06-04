@@ -54,7 +54,6 @@ def make_single_sphere_vis(
                     diffuse_color=color,
                     opacity=opacity,
                     metallic=0.0,            # metalik değil
-                    specular_color=(0, 0, 0), # ayna yansıması yok
                     roughness=1.0
                 ),
             )
