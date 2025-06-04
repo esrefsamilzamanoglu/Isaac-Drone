@@ -214,7 +214,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             self._desired_pos_w,
         )
         dist = torch.linalg.norm(desired_pos_b, dim=1, keepdim=True).clamp_min(1e-3)
-
+        #print("observed dist:", dist) # orjine göre ötelenmemiş distance
         # RSSI path‑loss model ------------------------------------
         rssi_dbm = self.cfg.rssi_A1m_dbm - 10.0 * self.cfg.rssi_path_exp * torch.log10(dist)
         rssi_01 = (rssi_dbm - self.cfg.rssi_min_dbm) / (
@@ -232,6 +232,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             ],
             dim=-1,
         )
+
         return {"policy": obs}
 
     # -------------------------------------------------------------
@@ -240,6 +241,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         lin_vel = torch.sum(torch.square(self._robot.data.root_lin_vel_b), dim=1)
         ang_vel = torch.sum(torch.square(self._robot.data.root_ang_vel_b), dim=1)
         distance_to_goal = torch.linalg.norm(self._desired_pos_w - self._robot.data.root_pos_w, dim=1)
+        #print("distance_to_goal:", distance_to_goal) # orjine göre ötelenmiş distance
         distance_to_goal_mapped = 1 - torch.tanh(distance_to_goal / 0.8)
         found_goal = (distance_to_goal < 0.01).float()
         died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.1, self._robot.data.root_pos_w[:, 2] > 2.0)
@@ -251,7 +253,6 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             "died": died * self.cfg.died_scale
         }
         reward_total = torch.sum(torch.stack(list(rewards.values())), dim=0)
-
         # log episodic sums
         for key, value in rewards.items():
             self._episode_sums[key] += value
@@ -283,6 +284,12 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             self._desired_pos_w[env_ids] - self._robot.data.root_pos_w[env_ids], dim=1
         ).mean()
 
+        dists = torch.norm(
+            self._desired_pos_w[env_ids] - self._robot.data.root_pos_w[env_ids], dim=1
+        )
+        for idx, d in zip(env_ids.tolist(), dists.tolist()):
+            print(f"Env {idx} final_dist: {d:.4f}")
+
         extras: dict[str, Any] = {}
         for key in self._episode_sums.keys():
             episodic_avg = torch.mean(self._episode_sums[key][env_ids])
@@ -300,7 +307,6 @@ class QuadcopterRSSIEnv(DirectRLEnv):
 
         # ---- physics state reset --------------------------------
         self._robot.reset(env_ids)
-        super()._reset_idx(env_ids)
 
         if len(env_ids) == self.num_envs:
             self.episode_length_buf = torch.randint_like(self.episode_length_buf, high=int(self.max_episode_length))
@@ -323,8 +329,8 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         self._robot.write_joint_state_to_sim(joint_pos, joint_vel, None, env_ids)
 
         super()._reset_idx(env_ids)
-        if len(env_ids) == self.num_envs:
-            self.episode_length_buf = torch.randint_like(self.episode_length_buf, high=int(self.max_episode_length))
+        #if len(env_ids) == self.num_envs:
+        #    self.episode_length_buf = torch.randint_like(self.episode_length_buf, high=int(self.max_episode_length))
 
     # -----------------------------------------------------------------
     # Debug visualisation hooks

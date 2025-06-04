@@ -9,7 +9,7 @@ from __future__ import annotations
 # -----------------------------------------------------------------------------
 # Standard / third‑party imports
 # -----------------------------------------------------------------------------
-import os, sys, math
+import os, sys, math, time
 from pathlib import Path
 from typing import Optional, Any
 
@@ -44,6 +44,7 @@ from quadcopter_vis import (
 # -----------------------------------------------------------------------------
 # Sionna‑RT & Mitsuba setup
 # -----------------------------------------------------------------------------
+
 import mitsuba as mi
 mi.set_variant("cuda_ad_mono_polarized")
 
@@ -103,7 +104,7 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     )
 
     # Scene replication
-    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=30, env_spacing=8, replicate_physics=True)
+    scene: InteractiveSceneCfg = InteractiveSceneCfg(num_envs=8, env_spacing=0, replicate_physics=True)
 
     # Robot params
     robot: ArticulationCfg = CRAZYFLIE_CFG.replace(prim_path="/World/envs/env_.*/Robot")
@@ -115,12 +116,13 @@ class QuadcopterRSSIEnvCfg(DirectRLEnvCfg):
     ang_vel_reward_scale: float = -0.01
     distance_to_goal_reward_scale: float = 50.0
     died_scale: float = -1.0
+    found_goal_scale: float = 0.0
 
     # Sionna RF params
     frequency: float = 2.4e9  # Hz
     tx_power_dbm: float = 9.0
     max_depth: int = 2
-    samples_per_tx: int = 100
+    samples_per_tx: int = 10
     rssi_min_dbm: float = -150.0
     rssi_max_dbm: float = 30.0
     rssi_update_interval: int = 1
@@ -157,8 +159,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
 
         # goal/TX positions
         self._desired_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
-        self._tx_pos_w      = torch.zeros_like(self._desired_pos_w)
-
+        
         # RSSI buffers
         self._rssi_buf = torch.zeros(self.num_envs, 1, device=self.device)
         self._rssi_counter = 0
@@ -170,6 +171,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
                 "lin_vel",
                 "ang_vel",
                 "distance_to_goal",
+                "found_goal",
                 "died",
             ]
         }
@@ -178,6 +180,12 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         self._body_id     = self._robot.find_bodies("body")[0]
         self._robot_mass  = self._robot.root_physx_view.get_masses()[0].sum()
         self._robot_weight = (self._robot_mass * torch.tensor(self.sim.cfg.gravity, device=self.device).norm()).item()
+
+        self._env_origins = (
+            self._terrain.env_origins
+            if cfg.terrain is not None else
+            torch.zeros(self.num_envs, 3, device=self.device)
+        )
 
         # Sionna scene
         self._init_sionna()
@@ -195,19 +203,20 @@ class QuadcopterRSSIEnv(DirectRLEnv):
                     _MATS[alias].setdefault(rng, props)
 
         self._sionna_scene = load_scene(str(self.cfg.sionna_scene_file))
-        self._sionna_scene.frequency  = self.cfg.frequency
-        self._sionna_scene.bandwidth  = 100e6
+        self._sionna_scene.frequency = self.cfg.frequency
+        self._sionna_scene.bandwidth = 100e6
         arr = PlanarArray(num_rows=1, num_cols=1, pattern="iso", polarization="V")
         self._sionna_scene.tx_array = arr
         self._sionna_scene.rx_array = arr
 
-        self._tx = Transmitter("tx", [0,0,0], [0,0,0], power_dbm=self.cfg.tx_power_dbm)
-        self._sionna_scene.add(self._tx)
-
+        self._tx_devices: list[Transmitter] = []
         self._rx_devices: list[Receiver] = []
         for i in range(self.num_envs):
+            tx = Transmitter(f"tx{i}", [0,0,0], [0,0,0], power_dbm=self.cfg.tx_power_dbm)
             rx = Receiver(f"rx{i}", [0,0,0], [0,0,0])
+            self._sionna_scene.add(tx)
             self._sionna_scene.add(rx)
+            self._tx_devices.append(tx)
             self._rx_devices.append(rx)
 
         self._ps = PathSolver()
@@ -227,12 +236,14 @@ class QuadcopterRSSIEnv(DirectRLEnv):
             self._terrain = type("DummyTerrain", (), {"env_origins": torch.zeros(self.num_envs, 3, device=self.device)})()
 
         self.scene.clone_environments(copy_from_source=True)
-        light_cfg = sim_utils.DomeLightCfg(intensity=2000.0, color=(0.75, 0.75, 0.75))
+        light_cfg = sim_utils.DomeLightCfg(intensity=20000.0, color=(0.75, 0.75, 0.75))
         light_cfg.func("/World/Light", light_cfg) 
     # --------------------------- actions ---------------------------------
     def _pre_physics_step(self, actions: torch.Tensor):
         self._actions = actions.clamp(-1.0, 1.0)
-        self._thrust[:, 0, 2] = self.cfg.thrust_to_weight * self._robot_weight * (self._actions[:,0]+1) / 2
+        self._thrust[:, 0, 2] = (
+            self.cfg.thrust_to_weight * self._robot_weight * (self._actions[:, 0] + 1.0) / 2.0
+        )
         self._moment[:, 0, :] = self.cfg.moment_scale * self._actions[:, 1:]
 
         # store trajectory point for viz
@@ -245,82 +256,92 @@ class QuadcopterRSSIEnv(DirectRLEnv):
 
     # ------------------------- observations ------------------------------
     def _get_observations(self):
+        # update every N steps
+        step_time = time.time()
         if self._rssi_counter % self.cfg.rssi_update_interval == 0:
-            # -- update TX & RX positions --------------------------------
-            self._tx.position = self._tx_pos_w[0].tolist()
-            rx_np = self._robot.data.root_pos_w[:, :3].cpu().numpy()
-            for rx, p in zip(self._rx_devices, rx_np):
-                rx.position = p.tolist()
+            desired_local = self._desired_pos_w - self._env_origins
+            robot_local   = self._robot.data.root_pos_w[:, :3] - self._env_origins
+            rssi_list = []
+            #print(f"desired_local: {desired_local}, robot_local: {robot_local} ")
+            for i in range(self.num_envs):
+                # update positions
+                self._tx_devices[i].position = desired_local[i].tolist()
+                self._rx_devices[i].position = robot_local[i].tolist()
+                # solve paths
+                paths = self._ps(
+                    scene=self._sionna_scene,
+                    max_depth=self.cfg.max_depth,
+                    samples_per_src=self.cfg.samples_per_tx,
+                    synthetic_array=True,
+                    los=True,
+                    specular_reflection=True,
+                    diffuse_reflection=True,
+                    refraction=True,
+                    seed=i,
+                )
+                a_t, _ = paths.cir(normalize_delays=True, out_type="torch")
+                abs2 = torch.abs(a_t.to(self.device))**2
+                power_paths = abs2[0,0,0,:,:].sum()
+                d = torch.linalg.norm(desired_local[i] - robot_local[i]).clamp_min(1e-3)
+                lam = 3e8 / self.cfg.frequency
+                fspl = (lam / (4 * math.pi * d))**2
+                power = torch.maximum(power_paths, fspl)
+                power_safe = torch.clamp(power, min=1e-6)
+                prx_dbm = self.cfg.tx_power_dbm + 10 * torch.log10(power_safe)
 
-            # -- path solve ---------------------------------------------
-            paths = self._ps(
-                scene=self._sionna_scene,
-                max_depth=self.cfg.max_depth,
-                samples_per_src=self.cfg.samples_per_tx,
-                synthetic_array=True,
-                los=True,
-                specular_reflection=True,
-                diffuse_reflection=True,
-                refraction=True,
-                seed=0,
-            )
+                prx_dbm_cl = prx_dbm.clamp(self.cfg.rssi_min_dbm, self.cfg.rssi_max_dbm)
+                scale = self.cfg.rssi_max_dbm - self.cfg.rssi_min_dbm
+                rssi_val = (((prx_dbm_cl - self.cfg.rssi_min_dbm) / scale) * 2 - 1).clamp(-1.0,1.0)
+                rssi_list.append(rssi_val)
+                self._last_rssi[i] = prx_dbm
 
-            # complex amplitudes → power --------------------------------
-            a_t, _ = paths.cir(normalize_delays=True, out_type="torch")  # [E,1,1,1,P,1]
-            abs2 = torch.abs(a_t.to(self.device))**2
-            power_paths = abs2[:,0,0,0,:,:].sum((-2,-1))                 # [E]
-
-            # free‑space fallback --------------------------------------
-            rx_pos = self._robot.data.root_pos_w[:, :3]
-            d = torch.linalg.norm(rx_pos - self._tx_pos_w, dim=1).clamp_min(1e-3)
-            lam = 3e8 / self.cfg.frequency
-            fspl = (lam / (4*math.pi*d))**2
-            power = torch.maximum(power_paths, fspl)
-
-            prx_dbm = self.cfg.tx_power_dbm + 10 * torch.log10(power)
-            prx_dbm_cl = prx_dbm.clamp(self.cfg.rssi_min_dbm, self.cfg.rssi_max_dbm)
-
-            scale = self.cfg.rssi_max_dbm - self.cfg.rssi_min_dbm
-            self._rssi_buf = (((prx_dbm_cl - self.cfg.rssi_min_dbm) / scale) * 2 - 1).unsqueeze(-1)
-            self._last_rssi = prx_dbm
-
+            self._rssi_buf = torch.stack(rssi_list, dim=0).unsqueeze(-1)
         self._rssi_counter += 1
 
         desired_pos_b, _ = subtract_frame_transforms(
             self._robot.data.root_state_w[:, :3],
             self._robot.data.root_state_w[:, 3:7],
-            self._tx_pos_w,
+            self._desired_pos_w,
         )
-
         obs = torch.cat([
             self._robot.data.root_lin_vel_b,
             self._robot.data.root_ang_vel_b,
             self._robot.data.projected_gravity_b,
             self._rssi_buf,
         ], dim=-1)
+        #print(f"step_time: {(time.time()-step_time):.3f}")
         return {"policy": obs}
 
     # ---------------------------- rewards -------------------------------
     def _get_rewards(self):
-        lin_vel = (self._robot.data.root_lin_vel_b**2).sum(1)
-        ang_vel = (self._robot.data.root_ang_vel_b**2).sum(1)
-        dist     = torch.linalg.norm(self._tx_pos_w - self._robot.data.root_pos_w, dim=1)
-        dist_map = 1 - torch.tanh(dist/0.8)
-        died = torch.logical_or(
-            self._robot.data.root_pos_w[:, 2] < 0.1, self._robot.data.root_pos_w[:, 2] > 2.0
-        )
+        lin_vel = torch.sum(torch.square(self._robot.data.root_lin_vel_b), dim=1)
+        ang_vel = torch.sum(torch.square(self._robot.data.root_ang_vel_b), dim=1)
+
+        # --- env-yerel vektörler ---
+        desired_pos_local = self._desired_pos_w - self._env_origins
+        robot_pos_local   = self._robot.data.root_pos_w - self._env_origins
+        distance_to_goal  = torch.linalg.norm(desired_pos_local - robot_pos_local, dim=1)
+
+        # debug
+        #print("distance_to_goal:", distance_to_goal)
+
+        distance_to_goal_mapped = 1 - torch.tanh(distance_to_goal / 0.8)
+        found_goal = (distance_to_goal < 0.01).float()
+        died = torch.logical_or(self._robot.data.root_pos_w[:, 2] < 0.1,
+                                self._robot.data.root_pos_w[:, 2] > 2.0)
 
         rewards = {
             "lin_vel": lin_vel * self.cfg.lin_vel_reward_scale * self.step_dt,
             "ang_vel": ang_vel * self.cfg.ang_vel_reward_scale * self.step_dt,
-            "distance_to_goal": dist_map * self.cfg.distance_to_goal_reward_scale * self.step_dt,
+            "distance_to_goal": distance_to_goal_mapped * self.cfg.distance_to_goal_reward_scale * self.step_dt,
+            "found_goal": found_goal * self.cfg.found_goal_scale * self.step_dt,
             "died": died * self.cfg.died_scale,
         }
         reward_total = torch.sum(torch.stack(list(rewards.values())), dim=0)
 
-        # log episodic sums
-        for key, value in rewards.items():
-            self._episode_sums[key] += value
+        # episodic log
+        for k, v in rewards.items():
+            self._episode_sums[k] += v
         return reward_total
 
     # ----------------------------- dones -------------------------------
@@ -328,19 +349,34 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         timeout = self.episode_length_buf >= self.max_episode_length-1
         died = torch.logical_or(self._robot.data.root_pos_w[:,2] < 0.1,
                                 self._robot.data.root_pos_w[:,2] > 2.0)
+        #if died: print("died")
+        #if timeout: print("time out")
         return died, timeout
 
     # ------------------------------ reset ------------------------------
     def _reset_idx(self, env_ids: Optional[torch.Tensor]):
         if env_ids is None or len(env_ids) == self.num_envs:
             env_ids = self._robot._ALL_INDICES
-        
         self._traj_buf[env_ids] = 0.0
         self._traj_head[env_ids] = 0
 
         final_dist = torch.linalg.norm(
             self._desired_pos_w[env_ids] - self._robot.data.root_pos_w[env_ids], dim=1
         ).mean()
+        dists = torch.norm(
+            self._desired_pos_w[env_ids] - self._robot.data.root_pos_w[env_ids], dim=1
+        )
+        for idx, d in zip(env_ids.tolist(), dists.tolist()):
+            print(f"Env {idx} final_dist: {d:.4f}")
+
+        # new random target
+        local_goal = torch.zeros(3, device=self.device)
+        local_goal[:2] = torch.rand(2, device=self.device) * 4 - 2
+        local_goal[2]  = torch.rand(1, device=self.device) * 1 + 0.5
+        self._desired_pos_w[:] = self._env_origins + local_goal
+        # update each transmitter
+        for i, tx in enumerate(self._tx_devices):
+            tx.position = local_goal.tolist()
 
         extras: dict[str, Any] = {}
         for key in self._episode_sums.keys():
@@ -357,26 +393,20 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         )
         self.extras["log"] = extras
 
-        # new common target position
-        pos = torch.zeros(3, device=self.device)
-        pos[:2] = torch.rand(2, device=self.device)*4 - 2
-        pos[2]  = torch.rand(1, device=self.device)*1 + 0.5
-        self._tx.position = pos.tolist()
-        self._tx_pos_w[:] = pos
-        self._desired_pos_w[:] = pos
-
         # robot default state
         jp = self._robot.data.default_joint_pos[env_ids]
         jv = self._robot.data.default_joint_vel[env_ids]
         root = self._robot.data.default_root_state[env_ids]
         root[:, :3] += self._terrain.env_origins[env_ids]
+
         self._robot.write_root_pose_to_sim(root[:, :7], env_ids)
         self._robot.write_root_velocity_to_sim(root[:, 7:], env_ids)
         self._robot.write_joint_state_to_sim(jp, jv, None, env_ids)
 
+        self._robot.reset(env_ids)
         super()._reset_idx(env_ids)
-        if len(env_ids) == self.num_envs:
-            self.episode_length_buf = torch.randint_like(self.episode_length_buf, high=int(self.max_episode_length))
+        #if len(env_ids) == self.num_envs:
+        #    self.episode_length_buf = torch.randint_like(self.episode_length_buf, high=int(self.max_episode_length))
 
     def _set_debug_vis_impl(self, debug_vis: bool):
         if not getattr(self, "_window", None):
@@ -387,8 +417,8 @@ class QuadcopterRSSIEnv(DirectRLEnv):
 
             # create concentric goal spheres once -----------------
             if not hasattr(self, "goal_pos_visualizer"):
-                layers, min_r, max_r = 12, 0.01, 0.1
-                min_opa, color = 0.001, (1.0, 0.0, 0.0)
+                layers, min_r, max_r = 1, 0.07, 0.07
+                min_opa, color = 1, (1.0, 0.0, 0.0)
                 self.goal_pos_visualizer: list[VisualizationMarkers] = []
                 for i in range(layers):
                     t = i / (layers - 1) if layers > 1 else 0.0

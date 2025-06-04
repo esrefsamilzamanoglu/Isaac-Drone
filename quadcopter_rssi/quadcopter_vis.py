@@ -40,8 +40,8 @@ if TYPE_CHECKING:  # avoid circular import at runtime
 
 def make_single_sphere_vis(
     radius: float,
-    color: tuple[float, float, float] = (1.0, 0.0, 1.0),
-    opacity: float = 0.3,
+    color: tuple[float, float, float] = (1.0, 0.0, 0.0),
+    opacity: float = 0.9,
     prim_path: str = "/Visuals/GoalSphere",
 ) -> VisualizationMarkers:
     """Create a single semi-transparent sphere marker."""
@@ -90,7 +90,7 @@ if UI_AVAILABLE:
 
             # ------------------ camera ------------------
             viewer_cfg = ViewerCfg(
-                eye=(1.5, 1.5, 1.5),
+                eye=(1, 0, 1),
                 lookat=(0.0, 0.0, 0.0),
                 cam_prim_path="/OmniverseKit_Persp",
                 resolution=(1280, 720),
