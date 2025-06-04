@@ -10,6 +10,7 @@ from __future__ import annotations
 # Standard / third‑party imports
 # -----------------------------------------------------------------------------
 import os, sys, math, time
+import numpy as np
 from pathlib import Path
 from typing import Optional, Any
 
@@ -39,7 +40,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from quadcopter_vis import (
     make_single_sphere_vis,
     make_traj_point_vis,
-    draw_rf_paths_debug,
+    make_path_vis,
     QuadcopterEnvWindow,
 )
 # -----------------------------------------------------------------------------
@@ -191,9 +192,19 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         # Sionna scene
         self._init_sionna()
 
+        # ---- PATH VISUALIZER (Sionna paths) ----
+        # Burada max_paths ve max_bounces değerlerini ayarlayın:
+        # - max_paths: PathSolver'ın her anlamda döndürebileceğiniz en fazla ray sayısı (örn. default 64)
+        # - max_bounces: cfg.max_depth kullanılarak belirlenebilir (örneğin max_depth=2 ise en fazla 2 bounce)
+        max_paths   = 64
+        max_bounces = self.cfg.max_depth
+        self.path_vis = make_path_vis(self.num_envs, max_paths, max_bounces)
         self.set_debug_vis(self.cfg.debug_vis)
-        self._rf_paths: list[list[torch.Tensor]] = [[] for _ in range(self.num_envs)]
+        if self.cfg.debug_vis and hasattr(self, "_window") and self._window is not None:
+            self._window.add_marker(self.traj_vis)
+            self._window.add_marker(self.path_vis)
 
+        
 
     # ------------------------- Sionna setup ------------------------------
     def _init_sionna(self):
@@ -282,12 +293,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
                     refraction=True,
                     seed=i,
                 )
-                path_list = []
-                for p in paths.paths:                       # Sionna ≤0.19 & ≥1.0 uyumlu
-                    verts = torch.tensor(p.vertices, device=self.device, dtype=torch.float32)
-                    path_list.append(verts)
-                self._rf_paths[i] = path_list               # env-bazında sakla
-                
+                self._last_paths = paths
                 a_t, _ = paths.cir(normalize_delays=True, out_type="torch")
                 abs2 = torch.abs(a_t.to(self.device))**2
                 power_paths = abs2[0,0,0,:,:].sum()
@@ -475,7 +481,16 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         if hasattr(self, "_window") and self._window is not None:
             self._window.set_rssi(val)
         
-        draw_rf_paths_debug(self._rf_paths[0])
+        all_markers = []
+        if hasattr(self, "_last_paths"):
+            verts = self._last_paths.vertices.detach().cpu().numpy()[0]  # shape: (num_rays, max_bounces+2, 3)
+            for ray_pts in verts:
+                valid = np.any(np.abs(ray_pts) > 1e-6, axis=1)
+                pts = ray_pts[valid]
+                if pts.shape[0] >= 2:
+                    all_markers.append(pts)
+        if len(all_markers) > 0:
+            self.path_vis.visualize(all_markers)
 
 # ------------------------------ standalone test ------------------------------
 if __name__ == "__main__":

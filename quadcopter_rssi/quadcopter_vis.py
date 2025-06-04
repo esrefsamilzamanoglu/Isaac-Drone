@@ -29,7 +29,6 @@ from isaaclab.envs.ui import BaseEnvWindow  # safe even if headless
 from isaaclab.envs import ViewerCfg          
 from isaaclab.envs.ui.viewport_camera_controller import ViewportCameraController
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
-
 from isaaclab.sim import SphereCfg, PreviewSurfaceCfg
 
 if TYPE_CHECKING:  # avoid circular import at runtime
@@ -38,29 +37,6 @@ if TYPE_CHECKING:  # avoid circular import at runtime
 # -----------------------------------------------------------------------------
 # Helper factory functions
 # -----------------------------------------------------------------------------
-import torch
-from omni.isaac.debug_draw import _debug_draw
-from pxr import Gf
-
-_draw = _debug_draw.acquire_debug_draw_interface()
-
-def draw_rf_paths_debug(paths_per_env: list[list[torch.Tensor]],
-                        env_origin: torch.Tensor = torch.zeros(3)):
-    """paths_per_env: env-bazında, her biri (N_i, 3) torch.tensor vertex listesi"""
-    _draw.clear_lines()                           # eski çizgileri sil
-    for path in paths_per_env:
-        for verts in path:
-            # torch → tuple list
-            pts = [(float(p[0]+env_origin[0]),
-                    float(p[1]+env_origin[1]),
-                    float(p[2]+env_origin[2])) for p in verts]
-
-            if len(pts) >= 2:
-                _draw.draw_lines(pts[:-1], pts[1:],
-                                 [(0.2,0.8,1.0,1)]* (len(pts)-1),  # renk RGBA
-                                 [2]* (len(pts)-1))                 # kalınlık px
-
-
 
 def make_single_sphere_vis(
     radius: float,
@@ -103,6 +79,26 @@ def make_traj_point_vis(
     cfg = VisualizationMarkersCfg(prim_path=prim_path, markers=markers)
     return VisualizationMarkers(cfg)
 
+
+def make_path_vis(num_envs: int, max_paths: int, max_bounces: int) -> VisualizationMarkers:
+    """
+    Sionna’dan akan path’leri world’da çizmek için bir line_strip marker oluşturur.
+    - num_envs: paralel env sayısı
+    - max_paths: PathSolver’ın en fazla döndürebileceği ray sayısı (örneğin; default 64 veya onu aşmayacak)
+    - max_bounces: Bir ray üzerindeki en fazla bounce sayısı (örneğin; max_depth=2 ise en fazla 2 bounce + TX→RX toplam 4 nokta)
+    """
+    # Her bir env için 'max_paths' adet line-strip; her bir line-strip max bounces+2 nokta
+    total_segments = num_envs * max_paths
+    total_points   = total_segments * (max_bounces + 2)
+
+    return VisualizationMarkers(
+        prim_path="/Visuals/SionnaPaths",
+        marker_type="LINE_STRIP",      # uç uca bağlanan çizgi
+        color=(1.0, 0.0, 0.0),          # kırmızı
+        scale=0.005,                   # çizgi kalınlığı
+        max_num_markers=total_segments,
+        max_points_per_marker=(max_bounces + 2),
+    )
 # -----------------------------------------------------------------------------
 # Custom viewport window
 # -----------------------------------------------------------------------------
