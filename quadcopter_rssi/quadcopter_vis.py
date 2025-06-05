@@ -29,7 +29,7 @@ from isaaclab.envs.ui import BaseEnvWindow  # safe even if headless
 from isaaclab.envs import ViewerCfg          
 from isaaclab.envs.ui.viewport_camera_controller import ViewportCameraController
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
-from isaaclab.sim import SphereCfg, PreviewSurfaceCfg
+from isaaclab.sim import SphereCfg, CylinderCfg, PreviewSurfaceCfg
 
 if TYPE_CHECKING:  # avoid circular import at runtime
     from quadcopter_env import QuadcopterRSSIEnv  # adjust to your actual module name
@@ -82,23 +82,30 @@ def make_traj_point_vis(
 
 def make_path_vis(num_envs: int, max_paths: int, max_bounces: int) -> VisualizationMarkers:
     """
-    Sionna’dan akan path’leri world’da çizmek için bir line_strip marker oluşturur.
-    - num_envs: paralel env sayısı
-    - max_paths: PathSolver’ın en fazla döndürebileceği ray sayısı (örneğin; default 64 veya onu aşmayacak)
-    - max_bounces: Bir ray üzerindeki en fazla bounce sayısı (örneğin; max_depth=2 ise en fazla 2 bounce + TX→RX toplam 4 nokta)
+    İnce uzun silindir modelini (CylinderCfg) kullanacak şekilde güncellendi.
+    - num_envs:      Paralel ortam sayısı
+    - max_paths:     Her env için en fazla ray sayısı (örneğin 64)
+    - max_bounces:   Her ray üzerindeki maksimum bounce sayısı (örneğin cfg.max_depth)
     """
-    # Her bir env için 'max_paths' adet line-strip; her bir line-strip max bounces+2 nokta
-    total_segments = num_envs * max_paths
-    total_points   = total_segments * (max_bounces + 2)
 
-    return VisualizationMarkers(
+    # 1) Toplam segment sayısı = num_envs * max_paths * (max_bounces + 1)
+    #    (Çünkü N bounce varsa, segment sayısı = N+1)
+    total_segments = num_envs * max_paths * (max_bounces + 1)
+
+    # 2) Her bir silindir için bir “CylinderCfg” tanımlayalım:
+    markers_cfg = {}
+    for i in range(total_segments):
+        markers_cfg[f"cyl_{i:06d}"] = CylinderCfg(
+            radius=1.0,  # Gerçek yarıçapı transform ile ayarlayacağız (scale x,y)
+            height=1.0,  # Gerçek boyu transform ile ayarlayacağız (scale z)
+            visual_material=PreviewSurfaceCfg(diffuse_color=(1.0, 0.0, 0.0)),
+        )
+
+    cfg = VisualizationMarkersCfg(
         prim_path="/Visuals/SionnaPaths",
-        marker_type="LINE_STRIP",      # uç uca bağlanan çizgi
-        color=(1.0, 0.0, 0.0),          # kırmızı
-        scale=0.005,                   # çizgi kalınlığı
-        max_num_markers=total_segments,
-        max_points_per_marker=(max_bounces + 2),
+        markers=markers_cfg
     )
+    return VisualizationMarkers(cfg)
 # -----------------------------------------------------------------------------
 # Custom viewport window
 # -----------------------------------------------------------------------------

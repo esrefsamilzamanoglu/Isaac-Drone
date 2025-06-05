@@ -481,16 +481,94 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         if hasattr(self, "_window") and self._window is not None:
             self._window.set_rssi(val)
         
-        all_markers = []
-        if hasattr(self, "_last_paths"):
-            verts = self._last_paths.vertices.detach().cpu().numpy()[0]  # shape: (num_rays, max_bounces+2, 3)
-            for ray_pts in verts:
-                valid = np.any(np.abs(ray_pts) > 1e-6, axis=1)
-                pts = ray_pts[valid]
-                if pts.shape[0] >= 2:
-                    all_markers.append(pts)
-        if len(all_markers) > 0:
-            self.path_vis.visualize(all_markers)
+        if not hasattr(self, "_last_paths"):
+            return
+    
+        verts = self._last_paths.vertices.detach().cpu().numpy()[0]
+        num_rays = verts.shape[0]
+        nbp = verts.shape[1]  # max_bounces+2
+
+        # 3) Tüm segmentler için transform’ları hazırlayacağız
+        transforms_list = []
+        for ray_id in range(num_rays):
+            ray_pts = verts[ray_id]  # (max_bounces+2, 3)
+
+            # “Gerçek” noktaları süz (dummy 0’lar varsa çıkar)
+            valid_mask = np.any(np.abs(ray_pts) > 1e-6, axis=1)
+            valid_pts = ray_pts[valid_mask]  # örn. [[x0,y0,z0],[x1,y1,z1],...]
+
+            # Ardışık iki nokta arasında silindir segmentleri oluştur
+            for j in range(len(valid_pts) - 1):
+                p0 = valid_pts[j]
+                p1 = valid_pts[j + 1]
+                # 3A) İki nokta arasındaki vektör ve uzunluk
+                v = p1 - p0
+                length = np.linalg.norm(v)
+                if length < 1e-6:
+                    continue
+
+                # 3B) Orta nokta
+                mid = (p0 + p1) / 2.0
+
+                # 3C) Norm vektörünü hesapla
+                vn = v / length  # segment yönü birim vektör
+
+                # 3D) Z‐ekseni (0,0,1) ile vn arasındaki dönüşüm matrisini bul
+                #     Kısa yol: Rodrigues formülü
+                uz = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+                axis = np.cross(uz, vn)
+                axis_norm = np.linalg.norm(axis)
+                if axis_norm < 1e-6:
+                    # Vektörler paralel/ters‐paralel:
+                    if np.dot(uz, vn) > 0:
+                        R = np.eye(3, dtype=np.float32)
+                    else:
+                        # 180 derece döndür: X ekseni etrafında
+                        R = np.array(
+                            [[1, 0, 0],
+                            [0, -1, 0],
+                            [0, 0, -1]],
+                            dtype=np.float32
+                        )
+                else:
+                    axis_unit = axis / axis_norm
+                    angle = np.arccos(np.dot(uz, vn))
+                    K = np.array([
+                        [0, -axis_unit[2], axis_unit[1]],
+                        [axis_unit[2], 0, -axis_unit[0]],
+                        [-axis_unit[1], axis_unit[0], 0]
+                    ], dtype=np.float32)
+                    R = (
+                        np.eye(3, dtype=np.float32)
+                        + np.sin(angle) * K
+                        + (1 - np.cos(angle)) * (K @ K)
+                    )
+
+                # 3E) Dönüşüm matrisini (4×4) oluştur
+                T = np.eye(4, dtype=np.float32)
+                T[0:3, 0:3] = R  # rotasyon
+                T[0:3, 3]   = mid  # çeviri
+
+                # 3F) Scale uygulanacak: x,y eksenine “ince yarıçap” = 0.005, z eksenine “uzunluk” = length
+                sx = 0.005
+                sy = 0.005
+                sz = length
+                T[0, 0] *= sx
+                T[1, 1] *= sy
+                T[2, 2] *= sz
+
+                transforms_list.append(T)
+
+        # 4) Eğer hiç segment yoksa çık
+        if len(transforms_list) == 0:
+            return
+
+        # 5) NumPy dizisini Torch Tensor’a çevir
+        transforms_np = np.stack(transforms_list, axis=0)  # (N,4,4)
+        transforms_torch = torch.from_numpy(transforms_np).to(self.device)
+
+        # 6) Görselleştir: her bir T, havuzdaki bir “cyl_00000X” silindirini o pozisyona yerleyecek
+        self.path_vis.visualize(transforms_torch)
 
 # ------------------------------ standalone test ------------------------------
 if __name__ == "__main__":
