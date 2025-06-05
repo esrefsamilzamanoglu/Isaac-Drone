@@ -319,7 +319,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
 
         dist = torch.linalg.norm(desired_pos_b, dim=1, keepdim=True).clamp_min(1e-3)
         
-        rssi_dbm = self.cfg.rssi_A1m_dbm - 10.0 * self.cfg.rssi_path_exp * torch.log10(dist)
+        rssi_dbm = -36 - 10.0 * 2.2 * torch.log10(dist)
         rssi_01 = (rssi_dbm - self.cfg.rssi_min_dbm) / (
             self.cfg.rssi_max_dbm - self.cfg.rssi_min_dbm
         )
