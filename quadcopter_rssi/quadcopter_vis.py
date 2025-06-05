@@ -104,7 +104,7 @@ def make_path_vis(device: str = "cpu") -> tuple[VisualizationMarkers, callable]:
             radius=_CYL_R,
             height=1.0,     # gerçek uzunluk z-scale ile ayarlanacak
             axis="Z",
-            visual_material=sim_utils.PreviewSurfaceCfg(
+            visual_material=PreviewSurfaceCfg(
                 diffuse_color=(0.0, 1.0, 1.0),
                 opacity=0.6
             ),
