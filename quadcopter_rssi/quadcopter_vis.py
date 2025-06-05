@@ -94,8 +94,11 @@ def make_path_vis(device="cpu"):
         draw_fn   : callable(paths)  → her kare çağır.
     """
     # ---- 1) Boş konfig ve Marker havuzu -------------------------------
-    vm_cfg = VisualizationMarkersCfg(prim_path=_ROOT_PRIM)
-    markers = VisualizationMarkers(vm_cfg)               # ← HATA buradan geliyordu
+    vm_cfg = VisualizationMarkersCfg(
+        prim_path=_ROOT_PRIM,
+        markers=[]                            # ⭐ boş liste veriyoruz
+    )
+    markers = VisualizationMarkers(vm_cfg)   # ⭐ artık TypeError yok
 
     pool = _MAX_RAYS * _MAX_BOUNCES
     for i in range(pool):
