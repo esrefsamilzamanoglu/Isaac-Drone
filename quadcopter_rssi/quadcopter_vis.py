@@ -134,8 +134,8 @@ def make_path_vis(device: str = "cpu") -> tuple[VisualizationMarkers, callable]:
         # Sionna çıktı: (1, 1, R, B+2, 3) ya da (1, R, B+2, 3)
 
         verts_np = np.array(paths.vertices)  
-        print(paths.shape())
-        print(verts_np.shape())
+        print(paths.shape)
+        print(verts_np.shape)
         # Genellikle shape = (1, R, B+2, 3) veya (1,1,R,B+2,3) olabilir.
         # Biz tek-Tx/Tek-Rx durumu varsayarak ilk iki boyutu squeeze edeceğiz:
 
