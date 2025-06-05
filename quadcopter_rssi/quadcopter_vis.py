@@ -139,6 +139,7 @@ def make_path_vis(device: str = "cpu") -> tuple[VisualizationMarkers, callable]:
         Ts = []
         for r in range(verts.shape[0]):            # her ray için
             ray_pts = verts[r][valid_mask[r]]      # sadece gerçek köşeler
+            print("raaaaays", ray_pts)
             for j in range(ray_pts.shape[0] - 1):
                 p0, p1 = ray_pts[j], ray_pts[j + 1]
                 v = p1 - p0
