@@ -32,6 +32,7 @@ from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.sim import SphereCfg, CylinderCfg, PreviewSurfaceCfg
 
 import torch
+import numpy as np
 
 if TYPE_CHECKING:  # avoid circular import at runtime
     from quadcopter_env import QuadcopterRSSIEnv  # adjust to your actual module name
@@ -131,34 +132,54 @@ def make_path_vis(device: str = "cpu") -> tuple[VisualizationMarkers, callable]:
 
         # Squeeze + device uyumu:
         # Sionna çıktı: (1, 1, R, B+2, 3) ya da (1, R, B+2, 3)
-        verts = paths.vertices.squeeze(0).to(device)   # (R, B+2, 3)
 
-        # “dummy” 0 satırlarını maske ile at:
-        valid_mask = torch.any(torch.abs(verts) > 1e-6, dim=-1)  # (R, B+2)
+        verts_np = np.array(paths.vertices)  
+        print(paths.shape())
+        print(verts_np.shape())
+        # Genellikle shape = (1, R, B+2, 3) veya (1,1,R,B+2,3) olabilir.
+        # Biz tek-Tx/Tek-Rx durumu varsayarak ilk iki boyutu squeeze edeceğiz:
+
+        # Eğer 5 boyutlu ise: (1,1,R,V,3) → (R,V,3)
+        if verts_np.ndim == 5 and verts_np.shape[0] == 1 and verts_np.shape[1] == 1:
+            verts_np = verts_np.squeeze(0).squeeze(0)  # → (R, B+2, 3)
+        # Eğer 4 boyutlu ise: (1,R,V,3) → (R,V,3)
+        elif verts_np.ndim == 4 and verts_np.shape[0] == 1:
+            verts_np = verts_np.squeeze(0)             # → (R, B+2, 3)
+        # Diğer durumlarda doğrudan bırak (örneğin zaten (R,V,3) şeklinde gelmişse)
+
+        # — 2B) NumPy → Torch tensörü ve GPU/CPU’ya taşı:
+        verts = torch.from_numpy(verts_np).to(device)  # → torch.Tensor shape=(R, B+2, 3)
+
+        # — 2C) “dummy” yani sıfır satırları maskele:
+        #    (B+2, 3) satırlarından en az bir komponent mutlak > 1e-6 ise gerçek nokta
+        valid_mask = torch.any(torch.abs(verts) > 1e-6, dim=-1)  # shape=(R, B+2)
 
         Ts = []
-        for r in range(verts.shape[0]):            # her ray için
-            ray_pts = verts[r][valid_mask[r]]      # sadece gerçek köşeler
-            print("raaaaays", ray_pts)
+        # Her ray (r) için ayrı ayrı segment hesaplayacağız
+        for r in range(verts.shape[0]):            # r = 0..(num_rays-1)
+            ray_pts = verts[r][valid_mask[r]]      # Örneğin [(x0,y0,z0), (x1,y1,z1) …]
             for j in range(ray_pts.shape[0] - 1):
-                p0, p1 = ray_pts[j], ray_pts[j + 1]
-                v = p1 - p0
-                L = torch.linalg.norm(v)
+                p0 = ray_pts[j]
+                p1 = ray_pts[j + 1]
+                v  = p1 - p0
+                L  = torch.linalg.norm(v)
                 if L < 1e-6:
                     continue
 
                 # Orta nokta:
                 mid = 0.5 * (p0 + p1)
-                vn  = v / L
+                # Yön vektörü:
+                vn = v / L
 
-                # Rodrigues: Z eksenini vn’ye döndür
+                # Rodrigues rotasyon matrisi:
                 axis = torch.cross(uz, vn)
                 c_val = torch.clamp(torch.dot(uz, vn), -1.0, 1.0)
 
                 if torch.norm(axis) < 1e-6:
-                    # Z ekseniyle paralel veya ters
+                    # Z ekseniyle paralel/ters:
                     R = torch.eye(3, device=device)
                     if c_val < 0:
+                        # 180° çevir (X ekseni etrafında)
                         R[1, 1] = -1.0
                         R[2, 2] = -1.0
                 else:
@@ -166,20 +187,22 @@ def make_path_vis(device: str = "cpu") -> tuple[VisualizationMarkers, callable]:
                     K = torch.tensor([
                         [0.0,       -axis[2],  axis[1]],
                         [axis[2],    0.0,     -axis[0]],
-                        [-axis[1],   axis[0],  0.0   ]
+                        [-axis[1],   axis[0],   0.0  ]
                     ], device=device)
                     R = torch.eye(3, device=device) + K + k * (K @ K)
 
-                # 4×4 dönüşüm matrisi:
+                # 4×4 dünya dönüşüm matrisi:
                 T = torch.eye(4, device=device)
                 T[:3, :3] = R
                 T[:3,  3] = mid
-                T[0, 0] *= (_CYL_R * 2)  # X ekseni ölçek = çap
-                T[1, 1] *= (_CYL_R * 2)  # Y ekseni ölçek = çap
-                T[2, 2] *= L             # Z ekseni ölçek = segment uzunluğu
+                # Ölçekler:
+                T[0, 0] *= (_CYL_R * 2)  # X ekseni = çap
+                T[1, 1] *= (_CYL_R * 2)  # Y ekseni = çap
+                T[2, 2] *= L             # Z ekseni = segment uzunluğu
 
                 Ts.append(T)
 
+        # — 2D) Eğer segment varsa, marker’ları güncelle, yoksa gizle —
         if Ts:
             markers.set_visibility(True)
             markers.visualize(torch.stack(Ts))
