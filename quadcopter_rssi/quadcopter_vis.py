@@ -80,58 +80,47 @@ def make_traj_point_vis(
     }
     cfg = VisualizationMarkersCfg(prim_path=prim_path, markers=markers)
     return VisualizationMarkers(cfg)
+
 _CYL_R        = 0.005        # Silindir yarıçapı (metre cinsinden, 1 cm)
 _MAX_RAYS     = 64           # PathSolver’da samples_per_src
 _MAX_BOUNCES  = 3            # cfg.max_depth
 _ROOT_PRIM    = "/Visuals/Rays"   # Tüm silindirler bu prefix altında spawn edilecek
 
-def make_path_vis(device: str = "cpu"):
+def make_path_vis(device: str = "cpu") -> tuple[VisualizationMarkers, callable]:
     """
-    Sionna-RT paths.vertices → ince silindir marker’larına dönüştüren
-    VisualizationMarkers + callback(kullanıcıya draw_fn) ikilisi döner.
-
-    Device:
-        "cpu" veya "cuda" (env.device) olarak verilmeli, çünkü
-        çizim için world-transform hesaplamalarında torch kullanıyoruz.
-
-    Dönenler:
-      markers : VisualizationMarkers  (USD içinde önceden yaratılmış CylinderCfg havuzu)
-      draw_fn : Callable(paths)        (her karede çağrılıp, paths argümanına göre silindirleri günceller)
+    Sionna-RT `paths` objesindeki vertices’i kullanarak
+    ince silindir marker’lar (CylinderCfg) oluşturup dönen iki şey:
+      • markers: VisualizationMarkers   (USD sahneye ekli havuz)
+      • draw_fn: callable(paths)         (her frame çağrıldığında paths’a göre günceller)
     """
 
-    # ===========================================================
-    #  1) En başta “markers” listesine direkt tüm CylinderCfg’leri koyun:
-    # ===========================================================
-    # Havuzdaki silindir sayısı = _MAX_RAYS * _MAX_BOUNCES
+    # -----------------------------------------------------------
+    # 1) “markers” için direkt tüm CylinderCfg’leri bir dict’te hazırlayın:
+    # -----------------------------------------------------------
     pool_size = _MAX_RAYS * _MAX_BOUNCES
-
-    # Her silindir için bir CylinderCfg oluşturup listeye ekleyelim:
-    cyl_cfgs = []
+    cyl_dict = {}
     for i in range(pool_size):
-        cfg = CylinderCfg(
-            prim_path=f"{_ROOT_PRIM}/cyl_{i:05d}",
+        cyl_dict[f"cyl_{i:05d}"] = CylinderCfg(
             radius=_CYL_R,
-            height=1.0,        # Sonradan world-transform’da z-yönündeki ölçekle gerçek boyu ayarlanacak
+            height=1.0,     # gerçek uzunluk z-scale ile ayarlanacak
             axis="Z",
-            visual_material=PreviewSurfaceCfg(
-                diffuse_color=(0.0, 1.0, 1.0),  # Camgöbeği renk
+            visual_material=sim_utils.PreviewSurfaceCfg(
+                diffuse_color=(0.0, 1.0, 1.0),
                 opacity=0.6
             ),
         )
-        cyl_cfgs.append(cfg)
 
-    # “markers” listesi boş olamaz; onu doğrudan bunlarla başlatıyoruz:
+    # primes: "/Visuals/Rays/cyl_00000", …
+    # VisualizationMarkersCfg, prim_path=prefix, markers=cfg_dict
     vm_cfg = VisualizationMarkersCfg(
         prim_path=_ROOT_PRIM,
-        markers=cyl_cfgs,    # ⭐ Doğru: boş değil, tam havuzu tanımladık
+        markers=cyl_dict
     )
     markers = VisualizationMarkers(vm_cfg)
 
-    # ===========================================================
-    #  2) Her karede çağrılacak draw(paths) fonksiyonu
-    # ===========================================================
-    #   - paths.vertices: shape (num_tx, num_rx, num_rays, max_bounces+2, 3)
-    #   - Tek Tx/Tek Rx’li tipik kullanımda squeeze ederek (num_rays, max_bounces+2, 3) elde edilir.
+    # -----------------------------------------------------------
+    # 2) Her kare çağrılacak draw(paths) fonksiyonu
+    # -----------------------------------------------------------
     uz = torch.tensor([0.0, 0.0, 1.0], device=device)
 
     def draw(paths):
@@ -140,74 +129,62 @@ def make_path_vis(device: str = "cpu"):
             markers.set_visibility(False)
             return
 
-        # 1) paths.vertices’e erişelim ve fazladan boyutları sıkıştırıp GPU/CPU’ya taşıyalım:
-        #    → Orijinal: (1, 1, R, B+2, 3)  ya da  (1, R, B+2, 3) (Sionna sürümüne göre)
-        #    Biz R-düzeyini öne çıkaracağız:
-        verts = paths.vertices.squeeze(0)      # (1,R,B+2,3) → (R,B+2,3)
-        verts = verts.to(device)               # CPU/CUDA eşleşmesi için
+        # Squeeze + device uyumu:
+        # Sionna çıktı: (1, 1, R, B+2, 3) ya da (1, R, B+2, 3)
+        verts = paths.vertices.squeeze(0).to(device)   # (R, B+2, 3)
 
-        # 2) Her ray içindeki “dummy 0” satırlarını maskele:
-        valid_mask = torch.any(torch.abs(verts) > 1e-6, dim=-1)  
-        # valid_mask.shape = (R, B+2), True olanlar gerçekte var olan köşe noktaları
+        # “dummy” 0 satırlarını maske ile at:
+        valid_mask = torch.any(torch.abs(verts) > 1e-6, dim=-1)  # (R, B+2)
 
-        # 3) Her ray için tüm segmentleri hesaplayıp 4×4 transform listesine dönüştürelim:
-        transforms = []
-        for r in range(verts.shape[0]):            # r = 0..(num_rays-1)
-            ray_pts = verts[r][valid_mask[r]]      # örn. [(x0,y0,z0), (x1,y1,z1), …]
-            # ray_pts.shape = (bounce_count+2, 3)
-
+        Ts = []
+        for r in range(verts.shape[0]):            # her ray için
+            ray_pts = verts[r][valid_mask[r]]      # sadece gerçek köşeler
             for j in range(ray_pts.shape[0] - 1):
-                p0 = ray_pts[j]
-                p1 = ray_pts[j + 1]
-                v  = p1 - p0
-                L  = torch.linalg.norm(v)
+                p0, p1 = ray_pts[j], ray_pts[j + 1]
+                v = p1 - p0
+                L = torch.linalg.norm(v)
                 if L < 1e-6:
-                    continue  # çok kısa, yok say
+                    continue
 
-                # 3A) Orta nokta:
-                mid_point = 0.5 * (p0 + p1)
-                # 3B) Yön birimi:
-                vn = v / L
+                # Orta nokta:
+                mid = 0.5 * (p0 + p1)
+                vn  = v / L
 
-                # 3C) Rodrigues rotasyonunu hesaplayalım:
+                # Rodrigues: Z eksenini vn’ye döndür
                 axis = torch.cross(uz, vn)
                 c_val = torch.clamp(torch.dot(uz, vn), -1.0, 1.0)
 
                 if torch.norm(axis) < 1e-6:
-                    # Z ekseniyle paralel veya tersse:
+                    # Z ekseniyle paralel veya ters
                     R = torch.eye(3, device=device)
                     if c_val < 0:
-                        # Z-ekseni ters yönde: 180° (X ekseni etrafında)
                         R[1, 1] = -1.0
                         R[2, 2] = -1.0
                 else:
                     k = 1.0 / (1.0 + c_val)
                     K = torch.tensor([
-                        [0.0,        -axis[2],  axis[1]],
-                        [axis[2],     0.0,      -axis[0]],
-                        [-axis[1],    axis[0],   0.0   ]
+                        [0.0,       -axis[2],  axis[1]],
+                        [axis[2],    0.0,     -axis[0]],
+                        [-axis[1],   axis[0],  0.0   ]
                     ], device=device)
                     R = torch.eye(3, device=device) + K + k * (K @ K)
 
-                # 3D → 4×4 dünya dönüşüm matrisi:
+                # 4×4 dönüşüm matrisi:
                 T = torch.eye(4, device=device)
                 T[:3, :3] = R
-                T[:3,  3] = mid_point
-                # Ölçekleri uygulayalım:
-                T[0, 0] *= (_CYL_R * 2)    # X ekseni = çap
-                T[1, 1] *= (_CYL_R * 2)    # Y ekseni = çap
-                T[2, 2] *= L               # Z ekseni = segment uzunluğu
+                T[:3,  3] = mid
+                T[0, 0] *= (_CYL_R * 2)  # X ekseni ölçek = çap
+                T[1, 1] *= (_CYL_R * 2)  # Y ekseni ölçek = çap
+                T[2, 2] *= L             # Z ekseni ölçek = segment uzunluğu
 
-                transforms.append(T)
+                Ts.append(T)
 
-        # 4) Tek bir tensor haline getir ve marker’lara bildir:
-        if transforms:
+        if Ts:
             markers.set_visibility(True)
-            markers.visualize(torch.stack(transforms))
+            markers.visualize(torch.stack(Ts))
         else:
             markers.set_visibility(False)
 
-    # markers nesnesini ve draw(paths) callback’ini döndür:
     return markers, draw
 # Custom viewport window
 # -----------------------------------------------------------------------------
