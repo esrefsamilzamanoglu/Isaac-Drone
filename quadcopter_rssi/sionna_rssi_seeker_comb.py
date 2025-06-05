@@ -200,9 +200,7 @@ class QuadcopterRSSIEnv(DirectRLEnv):
         max_bounces = self.cfg.max_depth
         self.path_vis = make_path_vis(self.num_envs, max_paths, max_bounces)
         self.set_debug_vis(self.cfg.debug_vis)
-        if self.cfg.debug_vis and hasattr(self, "_window") and self._window is not None:
-            self._window.add_marker(self.traj_vis)
-            self._window.add_marker(self.path_vis)
+        
 
         
 
