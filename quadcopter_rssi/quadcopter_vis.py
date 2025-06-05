@@ -82,29 +82,27 @@ def make_traj_point_vis(
     return VisualizationMarkers(cfg)
 
 
-_CYL_R        = 0.005          # 1 cm çap
-_MAX_RAYS     = 64             # PathSolver'da samples_per_tx
-_MAX_BOUNCES  = 3              # env.cfg.max_depth
-_PREFIX       = "/Visuals/Rays"
-
+_CYL_R        = 0.005      # çap 1 cm
+_MAX_RAYS     = 64
+_MAX_BOUNCES  = 3
+_ROOT_PRIM    = "/Visuals/Rays"   # tüm silindirler bunun altında
 
 def make_path_vis(device="cpu"):
     """
-    İnce uzun silindir (CylinderCfg) havuzu oluşturur ve eşlik eden
-    `visualize(paths)` callback'ini döndürür.
-    ------------------------------------------------------------------------
-    Dönüş:
-        markers   : VisualizationMarkers  (önceden yaratılmış USD silindirleri)
-        visualize : callable(paths)       (her kare çağrılıp segmentleri günceller)
+    Sionna-RT paths → ince silindir.  Dönüş:
+        markers   : VisualizationMarkers
+        draw_fn   : callable(paths)  → her kare çağır.
     """
-    # --- 1) Havuzu kur ------------------------------------------------------
-    markers = VisualizationMarkers()
+    # ---- 1) Boş konfig ve Marker havuzu -------------------------------
+    vm_cfg = VisualizationMarkersCfg(prim_path=_ROOT_PRIM)
+    markers = VisualizationMarkers(vm_cfg)               # ← HATA buradan geliyordu
+
     pool = _MAX_RAYS * _MAX_BOUNCES
     for i in range(pool):
         cyl_cfg = CylinderCfg(
-            prim_path=f"{_PREFIX}/cyl_{i:05d}",
+            prim_path=f"{_ROOT_PRIM}/cyl_{i:05d}",
             radius=_CYL_R,
-            height=1.0,        # gerçek uzunluk scale ile ayarlanacak
+            height=1.0,                # gerçek uzunluk scale’da
             axis="Z",
             visual_material=PreviewSurfaceCfg(
                 diffuse_color=(0.0, 1.0, 1.0), opacity=0.6
@@ -112,62 +110,56 @@ def make_path_vis(device="cpu"):
         )
         markers.add_visual(cyl_cfg)
 
-    # --- 2) Her kare çağrılacak helper --------------------------------------
-    uz = torch.tensor([0.0, 0.0, 1.0], device=device)
+    # ---- 2) Her kare çağrılacak çizim fonksiyonu ----------------------
+    uz = torch.tensor([0., 0., 1.], device=device)
 
-    def visualize(paths):
+    def draw(paths):
         if paths is None:
             markers.set_visibility(False)
             return
 
-        # (R, V, 3) – 0 dummy köşeleri ayıklıyoruz
-        verts = paths.vertices.squeeze(0).to(device)         # (1,R,…) -> (R,…)
+        verts = paths.vertices.squeeze(0).to(device)       # (R, V, 3)
         mask  = torch.any(torch.abs(verts) > 1e-6, dim=-1)
 
-        T_all = []
+        T_list = []
         for r in range(verts.shape[0]):
-            pts = verts[r][mask[r]]                          # gerçek köşeler
-            for j in range(pts.shape[0] - 1):
-                p0, p1 = pts[j], pts[j + 1]
+            pts = verts[r][mask[r]]
+            for j in range(pts.shape[0]-1):
+                p0, p1 = pts[j], pts[j+1]
                 v  = p1 - p0
                 L  = torch.linalg.norm(v)
-                if L < 1e-6:
-                    continue
+                if L < 1e-6:  continue
 
                 mid = 0.5 * (p0 + p1)
                 vn  = v / L
 
-                # Rodrigues: Z eksenini vn vektörüne döndür
                 axis = torch.cross(uz, vn)
-                c    = torch.clamp(torch.dot(uz, vn), -1.0, 1.0)
-                if torch.norm(axis) < 1e-6:                   # paralel (+/-)
+                c    = torch.clamp(torch.dot(uz, vn), -1., 1.)
+                if torch.norm(axis) < 1e-6:                # paralel (+/-)
                     R = torch.diag(torch.tensor([1., 1., 1.], device=device))
-                    if c < 0:                                 # ters yönde
-                        R[1, 1] = R[2, 2] = -1
+                    if c < 0:  R[1,1] = R[2,2] = -1
                 else:
-                    k  = 1.0 / (1.0 + c)
-                    K  = torch.tensor([[0, -axis[2], axis[1]],
+                    k = 1./(1.+c)
+                    K = torch.tensor([[0, -axis[2], axis[1]],
                                       [axis[2], 0, -axis[0]],
                                       [-axis[1], axis[0], 0]], device=device)
-                    R  = torch.eye(3, device=device) + K + k * K @ K
+                    R = torch.eye(3, device=device) + K + k * K @ K
 
-                # 4×4 world transform
                 T = torch.eye(4, device=device)
-                T[:3, :3] = R
-                T[:3,  3] = mid
-                T[0, 0]  *= _CYL_R * 2        # X-scale = çap
-                T[1, 1]  *= _CYL_R * 2        # Y-scale = çap
-                T[2, 2]  *= L                 # Z-scale = segment uzunluğu
-                T_all.append(T)
+                T[:3,:3] = R
+                T[:3, 3] = mid
+                T[0,0] *= _CYL_R*2
+                T[1,1] *= _CYL_R*2
+                T[2,2] *= L
+                T_list.append(T)
 
-        if T_all:
+        if T_list:
             markers.set_visibility(True)
-            markers.visualize(torch.stack(T_all))
+            markers.visualize(torch.stack(T_list))
         else:
             markers.set_visibility(False)
 
-    return markers, visualize
-
+    return markers, draw
 # Custom viewport window
 # -----------------------------------------------------------------------------
 
